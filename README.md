@@ -18,6 +18,6 @@ cmake ..
 cmake --build .
 ```
 
-Tests are built by default and can be run using `ctest` in the build directory. Hence the build depends on GoogleTest being installed.
+Tests are built by default and can be run using `ctest` in the build directory.
 
 If you wish to disable building tests, you can do so by passing `-DBUILD_TESTS=OFF` to the `cmake` command.
