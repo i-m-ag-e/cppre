@@ -11,7 +11,7 @@
 
 namespace cppre {
 namespace detail {
-enum class QuantifierType { Star, Plus, Optional };
+enum class QuantifierType : char { Star = '*', Plus = '+', Optional = '?' };
 
 enum class ASTNodeType {
     Wildcard,

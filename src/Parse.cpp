@@ -4,12 +4,24 @@
 
 #include <cppre/Parse.h>
 
+#include <memory>
+#include <string_view>
+#include <utility>
+
+#include "cppre/AST.h"
+
 namespace cppre::detail {
 
 struct Parser {
-    std::string pattern;
+    std::string_view pattern;
     size_t current_pos = 0;
     int group_id = 0;
+
+    [[nodiscard]] auto rollback(int n = 1) {
+        if (current_pos == 0)
+            return;
+        current_pos -= n;
+    }
 
     [[nodiscard]] auto peek() const -> char {
         if (is_at_end())
@@ -31,16 +43,41 @@ struct Parser {
 static constexpr std::string_view kQuantifiers = "*+?";
 static constexpr std::string_view kMetacharacters = ".|()[]*+?";
 
+enum EscapeType { Char, CharClass };
+static auto escape(char c) -> std::pair<EscapeType, char> {
+    switch (c) {
+        case 'n':
+            return {EscapeType::Char, '\n'};
+        case 't':
+            return {EscapeType::Char, '\t'};
+        case 'r':
+            return {EscapeType::Char, '\r'};
+        case 'b':
+            return {EscapeType::Char, '\b'};
+        case 'd':
+        case 'w':
+        case 's':
+        case 'D':
+        case 'W':
+        case 'S':
+            return {EscapeType::CharClass, c};
+
+        default:
+            return {EscapeType::Char, c};
+    }
+}
+
 static auto parse_regex_impl(Parser& parser) -> ASTNodePtr;
 static auto parse_alt_term(Parser& parser) -> ASTNodePtr;
 static auto parse_concat_term(Parser& parser) -> ASTNodePtr;
 static auto parse_string(Parser& parser) -> ASTNodePtr;
 static auto parse_group(Parser& parser) -> ASTNodePtr;
 
-auto parse_regex(const std::string& pattern) -> ASTNodePtr {
-    Parser parser{.pattern = pattern};
+auto parse_regex(std::string_view pattern) -> ASTNodePtr {
+    Parser parser{.pattern = pattern, .group_id = 1};
 
-    return parse_regex_impl(parser);
+    auto regex = parse_regex_impl(parser);
+    return std::make_unique<GroupNode>(std::move(regex), 0);
 }
 
 auto parse_regex_impl(Parser& parser) -> ASTNodePtr {
@@ -92,26 +129,54 @@ auto parse_concat_term(Parser& parser) -> ASTNodePtr {
 }
 
 auto parse_string(Parser& parser) -> ASTNodePtr {
-    const size_t start = parser.current_pos;
+    const size_t old_start = parser.current_pos;
+    size_t start = parser.current_pos;
+    char quantified = '\0';
+    std::string s;
+
     while (!parser.is_at_end() &&
            kMetacharacters.find(parser.peek()) == std::string::npos) {
-        if (kQuantifiers.find(parser.peek_next()) != std::string::npos) {
+        if (parser.peek() != '\\' &&
+            kQuantifiers.find(parser.peek_next()) != std::string::npos) {
             break;
         }
-        parser.advance();
+
+        if (parser.peek() == '\\') {
+            parser.advance();
+
+            if (parser.is_at_end())
+                break;
+
+            auto [esc_type, escaped] = escape(parser.peek());
+            if (kQuantifiers.find(parser.peek_next()) != std::string::npos) {
+                if (start == parser.current_pos - 1) {
+                    parser.advance();
+                    quantified = escaped;
+                    break;
+                }
+                parser.rollback(1);
+                break;
+            }
+
+            s += parser.pattern.substr(start, parser.current_pos - start - 1);
+            s.push_back(escaped);
+            parser.advance();
+            start = parser.current_pos;
+        } else {
+            parser.advance();
+        }
     }
 
-    if (start == parser.current_pos) {
-        ASTNodePtr literal =
-            std::make_unique<LiteralNode>(std::string(1, parser.advance()));
-        QuantifierType qt = parser.peek() == '*'   ? QuantifierType::Star
-                            : parser.peek() == '+' ? QuantifierType::Plus
-                                                   : QuantifierType::Optional;
-        parser.advance();
+    if ((start == old_start && start == parser.current_pos) ||
+        quantified != '\0') {
+        ASTNodePtr literal = std::make_unique<LiteralNode>(
+            std::string(1, quantified ? quantified : parser.advance()));
+        QuantifierType qt = static_cast<QuantifierType>(parser.advance());
         return std::make_unique<RepNode>(std::move(literal), qt);
     }
-    return std::make_unique<LiteralNode>(
-        parser.pattern.substr(start, parser.current_pos - start));
+
+    s += parser.pattern.substr(start, parser.current_pos - start);
+    return std::make_unique<LiteralNode>(s);
 }
 
 auto parse_group(Parser& parser) -> ASTNodePtr {

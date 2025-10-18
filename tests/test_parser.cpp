@@ -13,7 +13,7 @@ auto dump_string(std::string const& str) -> std::string {
     std::stringstream ss;
     ss << '\'';
     for (char c : str) {
-        if (isspace(c) || c == '\'' || c == '\\')
+        if (c == '\'')
             ss << '\\' << c;
         else
             ss << c;
@@ -29,7 +29,7 @@ auto dump_test_ast(LiteralNode const& node) -> std::string {
 }
 
 auto dump_test_ast(WildcardNode const&) -> std::string {
-    return "Wildcard()";
+    return "<WC>";
 }
 
 auto dump_test_ast(ConcatNode const& node) -> std::string {
@@ -53,8 +53,12 @@ auto dump_test_ast(RepNode const& node) -> std::string {
     s += ", " + dump_test_ast(node.node) + ")";
     return s;
 }
+
 auto dump_test_ast(GroupNode const& node) -> std::string {
-    return "((" + dump_test_ast(node.node) + "))";
+    if (node.group_id == 0)
+        return dump_test_ast(node.node);
+    return "([" + std::to_string(node.group_id) + "](" +
+           dump_test_ast(node.node) + "))";
 }
 
 auto dump_test_ast(ASTNodePtr const& node) -> std::string {
@@ -73,11 +77,131 @@ auto dump_test_ast(ASTNodePtr const& node) -> std::string {
             return dump_test_ast(static_cast<GroupNode const&>(*node));
     }
 }
+
+auto test_eq(std::string_view pat, std::string_view repr) -> void {
+    ASSERT_EQ(dump_test_ast(parse_regex(pat)), repr);
+}
+
 }  // namespace
 
 TEST(ParserTest, TestLiteral) {
-    ASSERT_EQ(dump_test_ast(parse_regex("a")), "Literal('a')");
-    ASSERT_EQ(dump_test_ast(parse_regex("abcd")), "Literal('abcd')");
-    ASSERT_EQ(dump_test_ast(parse_regex("abcd+")),
-              "Literal('abc')Rep(+, Literal('d'))");
+    test_eq("a", "Literal('a')");
+    test_eq("abcd", "Literal('abcd')");
+    test_eq("ab\\\\cd", "Literal('ab\\cd')");
+    test_eq("abcd\\n", "Literal('abcd\n')");
+    test_eq("abcd\\b", "Literal('abcd\b')");
+    test_eq("abcd\\r", "Literal('abcd\r')");
+    test_eq("abcd\\t", "Literal('abcd\t')");
+
+    test_eq("abcd+", "Literal('abc')Rep(+, Literal('d'))");
+    test_eq("ab\\\\cd*", "Literal('ab\\c')Rep(*, Literal('d'))");
+    test_eq("ab\\nc?", "Literal('ab\n')Rep(?, Literal('c'))");
+
+    test_eq("ab\\+cd", "Literal('ab+cd')");
+    test_eq("ab\\|", "Literal('ab|')");
+    test_eq("ab\\*", "Literal('ab*')");
+    test_eq("ab\\n+", "Literal('ab')Rep(+, Literal('\n'))");
+    test_eq("ab\\\\+cd", "Literal('ab')Rep(+, Literal('\\'))Literal('cd')");
+
+    test_eq("", "");
+    test_eq("abc()", "Literal('abc')([1]())");
+    test_eq("abc(xyz)", "Literal('abc')([1](Literal('xyz')))");
+    test_eq("abc.", "Literal('abc')<WC>");
+    test_eq("abc|", "(Literal('abc')|)");
+
+    test_eq("ab\\?cd", "Literal('ab?cd')");
+    test_eq("ab\\.cd", "Literal('ab.cd')");
+    test_eq("ab\\(cd", "Literal('ab(cd')");
+    test_eq("ab\\)cd", "Literal('ab)cd')");
+
+    test_eq("ab\\+cd", "Literal('ab+cd')");
+    test_eq("ab\\|", "Literal('ab|')");
+    test_eq("ab\\*", "Literal('ab*')");
+
+    test_eq("ab\\zcd", "Literal('abzcd')");
+    test_eq("ab\\_cd", "Literal('ab_cd')");
+
+    test_eq("\\+abc", "Literal('+abc')");
+    test_eq("abc\\+", "Literal('abc+')");
+    test_eq("\\\\", "Literal('\\')");
+    test_eq(".", "<WC>");
+    test_eq("\\.", "Literal('.')");
+}
+
+TEST(ParserTest, TestGroup) {
+    test_eq("(a)", "([1](Literal('a')))");
+    test_eq("(abc)", "([1](Literal('abc')))");
+    test_eq("x(yz)z", "Literal('x')([1](Literal('yz')))Literal('z')");
+
+    test_eq("((a))", "([1](([2](Literal('a')))))");
+    test_eq("(a(b)c)", "([1](Literal('a')([2](Literal('b')))Literal('c')))");
+    test_eq("a(b(c)d)e",
+            "Literal('a')([1](Literal('b')([2](Literal('c')))Literal('d')))"
+            "Literal('e')");
+
+    test_eq("(a)(b)", "([1](Literal('a')))([2](Literal('b')))");
+    test_eq("a(b)c(d)e",
+            "Literal('a')([1](Literal('b')))Literal('c')([2](Literal('d')))"
+            "Literal('e')");
+
+    test_eq("(a)+", "Rep(+, ([1](Literal('a'))))");
+    test_eq("(abc)*", "Rep(*, ([1](Literal('abc'))))");
+    test_eq("(a)?", "Rep(?, ([1](Literal('a'))))");
+    test_eq("a(bc)*d", "Literal('a')Rep(*, ([1](Literal('bc'))))Literal('d')");
+
+    test_eq("(a|b)", "([1]((Literal('a')|Literal('b'))))");
+    test_eq("x(a|b)y",
+            "Literal('x')([1]((Literal('a')|Literal('b'))))Literal('y')");
+    test_eq("(a|b)+", "Rep(+, ([1]((Literal('a')|Literal('b')))))");
+    test_eq("(a|(b|c))",
+            "([1]((Literal('a')|([2]((Literal('b')|Literal('c'))))))"
+            ")");
+
+    test_eq("(a.)", "([1](Literal('a')<WC>))");
+    test_eq("(a.*)", "([1](Literal('a')Rep(*, <WC>)))");
+
+    test_eq("()", "([1]())");
+    test_eq("a()b", "Literal('a')([1]())Literal('b')");
+    test_eq("()*", "Rep(*, ([1]()))");
+
+    test_eq("(a(b|c)*d)+",
+            "Rep(+, ([1](Literal('a')Rep(*, "
+            "([2]((Literal('b')|Literal('c')))))Literal('d'))))");
+    test_eq("(a)|(b)", "(([1](Literal('a')))|([2](Literal('b'))))");
+}
+
+TEST(ParserTest, TestAlternation) {
+    test_eq("a|b", "(Literal('a')|Literal('b'))");
+    test_eq("abc|xyz", "(Literal('abc')|Literal('xyz'))");
+    test_eq("a|bc", "(Literal('a')|Literal('bc'))");
+    test_eq("a(b|c)d",
+            "Literal('a')([1]((Literal('b')|Literal('c'))))Literal('d')");
+    test_eq("(a|b)*", "Rep(*, ([1]((Literal('a')|Literal('b')))))");
+    test_eq("a*|b+", "(Rep(*, Literal('a'))|Rep(+, Literal('b')))");
+    test_eq("a|", "(Literal('a')|)");
+    test_eq("|b", "(|Literal('b'))");
+    test_eq("(a)|(b)", "(([1](Literal('a')))|([2](Literal('b'))))");
+}
+
+TEST(ParserTest, RepetitionTests) {
+    // --- Basic Repetition on Literals ---
+    test_eq("a*", "Rep(*, Literal('a'))");
+    test_eq("a+", "Rep(+, Literal('a'))");
+    test_eq("a?", "Rep(?, Literal('a'))");
+
+    test_eq("abc*", "Literal('ab')Rep(*, Literal('c'))");
+    test_eq("abc+", "Literal('ab')Rep(+, Literal('c'))");
+    test_eq("abc?", "Literal('ab')Rep(?, Literal('c'))");
+
+    test_eq("(abc)*", "Rep(*, ([1](Literal('abc'))))");
+    test_eq("(a|b)+", "Rep(+, ([1]((Literal('a')|Literal('b')))))");
+    test_eq("(a)?b", "Rep(?, ([1](Literal('a'))))Literal('b')");
+
+    test_eq(".*", "Rep(*, <WC>)");
+    test_eq(".+", "Rep(+, <WC>)");
+    test_eq("a.?", "Literal('a')Rep(?, <WC>)");
+
+    test_eq("\\**", "Rep(*, Literal('*'))");
+    test_eq("\\++", "Rep(+, Literal('+'))");
+    test_eq("\\??", "Rep(?, Literal('?'))");
 }
