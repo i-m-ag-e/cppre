@@ -10,7 +10,7 @@ set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} -O3")
 option(BUILD_SHARED_LIBS "Build shared libraries" OFF)
 option(BUILD_TESTING "Build tests" ON)
 
-add_library(cppre src/AST.cpp src/VM.cpp src/Parse.cpp)
+add_library(cppre src/AST.cpp src/VM.cpp src/Parse.cpp src/Regex.cpp)
 
 target_include_directories(cppre
         PUBLIC

@@ -5,6 +5,7 @@
 #include <cppre/AST.h>
 #include <cppre/Color.h>
 #include <cppre/VM.h>
+#include <sys/types.h>
 
 #include <algorithm>
 #include <cassert>
@@ -12,8 +13,11 @@
 #include <cstdint>
 #include <iomanip>
 #include <iostream>
+#include <memory>
+#include <optional>
 #include <string_view>
 #include <utility>
+#include <vector>
 
 namespace cppre {
 namespace detail {
@@ -124,6 +128,7 @@ auto VM::make_code(RepNode const& node) -> void {
     }
 }
 
+namespace {
 auto inst2string(InstructionType type) -> std::string_view {
     switch (type) {
         case cppre::detail::InstructionType::Split:
@@ -138,16 +143,60 @@ auto inst2string(InstructionType type) -> std::string_view {
             return "Match";
         case cppre::detail::InstructionType::String:
             return "String";
+        case cppre::detail::InstructionType::NoOp:
+            return "NoOp";
+        case cppre::detail::InstructionType::Anchor:
+            return "Anchor";
     }
 }
 
-VM::VM(ASTNodePtr const& ast) {
-    from_ast(ast);
-    bytecode.push_back(static_cast<uint16_t>(InstructionType::Match));
-    proglen++;
+auto copy_saved(Thread::SharedSavedArray const& saved)
+    -> Thread::SharedSavedArray {
+    return std::make_shared<Thread::SavedArray>(*saved);
 }
 
-auto VM::add_thread(ThreadList& tlist, Thread&& new_thread) -> void {
+auto update_saved(Thread::SharedSavedArray&& saved, size_t idx,
+                  int n) -> Thread::SharedSavedArray {
+    if (saved.use_count() == 1) {
+        (*saved)[idx] = n;
+        return std::move(saved);
+    }
+
+    auto new_saved = copy_saved(saved);
+    (*new_saved)[idx] = n;
+    return new_saved;
+}
+}  // namespace
+
+Thread::Thread(size_t ngroups)
+    : pc(0),
+      sp(0),
+      saved(std::make_shared<Thread::SavedArray>(2 * ngroups, -1)) {}
+Thread::Thread(size_t pc, size_t sp, SharedSavedArray const& old_saved)
+    : pc(pc), sp(sp), saved(old_saved) {}
+Thread::Thread(size_t pc, size_t sp, SharedSavedArray&& old_saved)
+    : pc(pc), sp(sp), saved(std::move(old_saved)) {}
+Thread::Thread(size_t pc, SharedSavedArray const& old_saved)
+    : pc(pc), saved(old_saved) {}
+Thread::Thread(size_t pc, SharedSavedArray&& old_saved)
+    : pc(pc), saved(std::move(old_saved)) {}
+
+VM::VM(ASTNodePtr const& ast) {
+    bytecode.push_back(static_cast<uint16_t>(InstructionType::Split));
+    bytecode.push_back(3);
+    bytecode.push_back(6);
+    bytecode.push_back(static_cast<uint16_t>(InstructionType::Any));
+    bytecode.push_back(static_cast<uint16_t>(InstructionType::Jump));
+    bytecode.push_back(0);
+    from_ast(ast);
+    bytecode.push_back(static_cast<uint16_t>(InstructionType::NoOp));
+    bytecode.push_back(static_cast<uint16_t>(InstructionType::NoOp));
+    bytecode.push_back(static_cast<uint16_t>(InstructionType::Match));
+    proglen += 9;
+}
+
+auto VM::add_thread(ThreadList& tlist, Thread&& new_thread,
+                    std::string_view const& str) -> void {
     size_t pc = new_thread.pc;
     if (0xf000 & bytecode[pc]) {
         return;
@@ -157,19 +206,66 @@ auto VM::add_thread(ThreadList& tlist, Thread&& new_thread) -> void {
     marked_insts.insert(pc);
     switch (static_cast<InstructionType>(bytecode[pc] & 0xff)) {
         case cppre::detail::InstructionType::Split: {
-            add_thread(tlist, Thread(bytecode[pc + 1], new_thread.sp,
-                                     new_thread.saved));
+            add_thread(
+                tlist,
+                Thread(bytecode[pc + 1], new_thread.sp, new_thread.saved), str);
             new_thread.pc = bytecode[pc + 2];
-            add_thread(tlist, std::move(new_thread));
+            add_thread(tlist, std::move(new_thread), str);
             break;
         }
+        case cppre::detail::InstructionType::NoOp:
+            while (bytecode[new_thread.pc++] ==
+                   static_cast<uint16_t>(InstructionType::NoOp)) {
+            }
+            add_thread(tlist, std::move(new_thread), str);
+            break;
         case cppre::detail::InstructionType::Jump:
             new_thread.pc = bytecode[pc + 1];
-            add_thread(tlist, std::move(new_thread));
+            add_thread(tlist, std::move(new_thread), str);
             break;
+        case cppre::detail::InstructionType::Anchor: {
+            bool assertion = false;
+            switch (bytecode[pc + 1]) {
+                case 'A':
+                    assertion = new_thread.sp == 0;
+                    break;
+                case '^':
+                    assertion =
+                        new_thread.sp == 0 || str[new_thread.sp - 1] == '\n';
+                    break;
+                case 'Z':
+                    assertion = new_thread.sp == str.length();
+                    break;
+                case '$':
+                    assertion = new_thread.sp == str.length() ||
+                                str[new_thread.sp] == '\n';
+                    break;
+                case 'b':
+                    assertion = new_thread.sp == 0 ||
+                                new_thread.sp == str.length() ||
+                                std::isspace(str[new_thread.sp - 1]) ||
+                                std::isspace(str[new_thread.sp]);
+                    break;
+                case 'B':
+                    assertion =
+                        !(new_thread.sp == 0 || new_thread.sp == str.length() ||
+                          std::isspace(str[new_thread.sp - 1]) ||
+                          std::isspace(str[new_thread.sp]));
+                    break;
+            }
+
+            if (assertion) {
+                new_thread.pc += 2;
+                add_thread(tlist, std::move(new_thread), str);
+            }
+            break;
+        }
         case cppre::detail::InstructionType::Save:
-            new_thread.saved[bytecode[pc + 1]] = new_thread.sp;
-            new_thread.pc += 2;
+            add_thread(tlist,
+                       Thread(new_thread.pc + 2, new_thread.sp,
+                              update_saved(std::move(new_thread.saved),
+                                           bytecode[pc + 1], new_thread.sp)),
+                       str);
             break;
         default:
             tlist.push_back(std::move(new_thread));
@@ -189,14 +285,17 @@ auto VM::run_thread(ThreadList& tlist, Thread const& thread,
             if (given.length() > thread.sp &&
                 given.length() - thread.sp >= str.length() &&
                 given.substr(thread.sp, str.length()) == str)
-                add_thread(tlist, Thread(pc + 2, thread.sp + str.length(),
-                                         thread.saved));
+                add_thread(
+                    tlist,
+                    Thread(pc + 2, thread.sp + str.length(), thread.saved),
+                    given);
             break;
         }
 
         case InstructionType::Any:
             if (thread.sp < given.length())
-                add_thread(tlist, Thread(pc + 1, thread.sp + 1, thread.saved));
+                add_thread(tlist, Thread(pc + 1, thread.sp + 1, thread.saved),
+                           given);
             break;
 
         case InstructionType::Match:
@@ -227,29 +326,34 @@ auto VM::print_bytecode() const -> void {
     std::cout << "\n";
 }
 
-auto VM::run_vm(std::string_view const& str) -> bool {
+auto VM::run_vm(std::string_view const& str)
+    -> std::optional<Thread::SavedArray> {
     ThreadList clist;
     ThreadList nlist;
     clist.reserve(proglen);
     nlist.reserve(proglen);
 
-    add_thread(clist, Thread(ngroups));
+    add_thread(clist, Thread(ngroups), str);
     do {
         std::for_each(marked_insts.cbegin(), marked_insts.cend(),
                       [this](size_t pc) { bytecode[pc] &= 0xff; });
         marked_insts.clear();
 
         if (clist.empty())
-            return false;
+            return {};
         for (auto const& thread : clist) {
-            if (run_thread(nlist, thread, str))
-                return true;
+            if (run_thread(nlist, thread, str)) {
+                for (auto i : *thread.saved)
+                    std::cout << i << " ";
+                std::cout << "\n";
+                return std::make_optional(std::move(*thread.saved));
+            }
         }
         std::swap(clist, nlist);
         nlist.clear();
     } while (true);
 
-    return false;
+    return {};
 }
 
 auto VM::print_code() const -> void {
@@ -275,6 +379,10 @@ auto VM::print_code() const -> void {
                 i += 2;
                 break;
             }
+            case cppre::detail::InstructionType::Anchor:
+                std::cout << static_cast<char>(bytecode[i + 1]);
+                i += 2;
+                break;
             default:
                 i++;
         }
