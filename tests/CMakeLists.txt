@@ -12,6 +12,8 @@ include(CTest)
 add_executable(test_basic test_basic.cpp)
 add_executable(run_tests
     test_parser.cpp
+    test_match.cpp
+    test_search.cpp
 )
 target_include_directories(test_basic PRIVATE ROOT_DIR/include)
 target_link_libraries(test_basic PRIVATE cppre)
