@@ -5,7 +5,6 @@
 #include <cppre/AST.h>
 #include <cppre/Color.h>
 #include <cppre/VM.h>
-#include <sys/types.h>
 
 #include <algorithm>
 #include <cassert>
@@ -183,8 +182,8 @@ Thread::Thread(size_t pc, SharedSavedArray&& old_saved)
 
 VM::VM(ASTNodePtr const& ast) {
     bytecode.push_back(static_cast<uint16_t>(InstructionType::Split));
-    bytecode.push_back(3);
     bytecode.push_back(6);
+    bytecode.push_back(3);
     bytecode.push_back(static_cast<uint16_t>(InstructionType::Any));
     bytecode.push_back(static_cast<uint16_t>(InstructionType::Jump));
     bytecode.push_back(0);
@@ -192,29 +191,37 @@ VM::VM(ASTNodePtr const& ast) {
     bytecode.push_back(static_cast<uint16_t>(InstructionType::NoOp));
     bytecode.push_back(static_cast<uint16_t>(InstructionType::NoOp));
     bytecode.push_back(static_cast<uint16_t>(InstructionType::Match));
+    visited.resize(bytecode.size(), false);
     proglen += 9;
 }
 
 auto VM::add_thread(ThreadList& tlist, Thread&& new_thread,
                     std::string_view const& str) -> void {
     size_t pc = new_thread.pc;
-    if (0xf000 & bytecode[pc]) {
+
+    if (visited[pc]) {
         return;
     }
 
-    bytecode[pc] |= 0xf000;
-    marked_insts.insert(pc);
-    switch (static_cast<InstructionType>(bytecode[pc] & 0xff)) {
+    visited[pc] = true;
+
+    if (new_thread.sp > str.length())
+        return;
+
+    switch (static_cast<InstructionType>(bytecode[pc])) {
         case cppre::detail::InstructionType::Split: {
             add_thread(
                 tlist,
                 Thread(bytecode[pc + 1], new_thread.sp, new_thread.saved), str);
             new_thread.pc = bytecode[pc + 2];
-            add_thread(tlist, std::move(new_thread), str);
+            add_thread(tlist,
+                       Thread(bytecode[pc + 2], new_thread.sp,
+                              std::move(new_thread.saved)),
+                       str);
             break;
         }
         case cppre::detail::InstructionType::NoOp:
-            while (bytecode[new_thread.pc++] ==
+            while (bytecode[++new_thread.pc] ==
                    static_cast<uint16_t>(InstructionType::NoOp)) {
             }
             add_thread(tlist, std::move(new_thread), str);
@@ -271,14 +278,11 @@ auto VM::add_thread(ThreadList& tlist, Thread&& new_thread,
             tlist.push_back(std::move(new_thread));
             return;
     }
-    bytecode[pc] &= 0xff;
-    marked_insts.erase(pc);
 }
 
 auto VM::run_thread(ThreadList& tlist, Thread const& thread,
                     std::string_view const& given) -> bool {
     size_t pc = thread.pc;
-    bytecode[pc] &= 0xff;
     switch (static_cast<InstructionType>(bytecode[pc])) {
         case InstructionType::String: {
             std::string_view const& str = strings[bytecode[pc + 1]];
@@ -307,11 +311,14 @@ auto VM::run_thread(ThreadList& tlist, Thread const& thread,
     return false;
 }
 
-auto print_threadlist(ThreadList const& tl) {
+auto VM::print_threadlist(ThreadList const& tl) const -> void {
     std::cout << "ThreadList:\n";
     for (auto const& t : tl) {
-        std::cout << "    pc: " << t.pc << " sp: " << t.sp << "\n";
+        std::cout << "    - pc: ";
+        print_inst(t.pc);
+        std::cout << "\n      sp: " << t.sp << "\n";
     }
+    std::cout << "---------------\n";
 }
 
 auto VM::print_bytecode() const -> void {
@@ -333,61 +340,64 @@ auto VM::run_vm(std::string_view const& str)
     clist.reserve(proglen);
     nlist.reserve(proglen);
 
+    std::optional<std::vector<int>> saved;
+
     add_thread(clist, Thread(ngroups), str);
     do {
-        std::for_each(marked_insts.cbegin(), marked_insts.cend(),
-                      [this](size_t pc) { bytecode[pc] &= 0xff; });
-        marked_insts.clear();
+        std::fill(visited.begin(), visited.end(), false);
 
         if (clist.empty())
-            return {};
+            break;
         for (auto const& thread : clist) {
             if (run_thread(nlist, thread, str)) {
-                for (auto i : *thread.saved)
-                    std::cout << i << " ";
-                std::cout << "\n";
-                return std::make_optional(std::move(*thread.saved));
+                if (!saved) {
+                    saved = std::make_optional(std::move(*thread.saved));
+                } else if ((*saved)[0] == (*thread.saved)[0] &&
+                           (*thread.saved)[1] > (*saved)[0]) {
+                    saved = std::make_optional(std::move(*thread.saved));
+                }
             }
         }
         std::swap(clist, nlist);
         nlist.clear();
     } while (true);
 
-    return {};
+    return saved;
+}
+
+auto VM::print_inst(int i) const -> int {
+    auto inst = static_cast<InstructionType>(bytecode[i]);
+    std::cout << std::setw(3) << i << " | " << std::setw(12)
+              << inst2string(inst);
+    switch (inst) {
+        case cppre::detail::InstructionType::Split:
+            std::cout << bytecode[i + 1] << ", " << bytecode[i + 2];
+            return i + 3;
+        case cppre::detail::InstructionType::Jump:
+        case cppre::detail::InstructionType::Save:
+            std::cout << bytecode[i + 1];
+            return i + 2;
+        case cppre::detail::InstructionType::String: {
+            const size_t sidx = bytecode[i + 1];
+            std::cout << sidx << " (" << MAGENTA << "\"" << strings[sidx]
+                      << "\"" << RESET << ")";
+            return i + 2;
+        }
+        case cppre::detail::InstructionType::Anchor:
+            std::cout << static_cast<char>(bytecode[i + 1]);
+            return i + 2;
+        default:
+            return i + 1;
+    }
 }
 
 auto VM::print_code() const -> void {
     std::cout << std::left;
     for (size_t i = 0; i < bytecode.size();) {
-        auto inst = static_cast<InstructionType>(bytecode[i]);
-        std::cout << std::setw(3) << i << " | " << std::setw(12)
-                  << inst2string(inst);
-        switch (inst) {
-            case cppre::detail::InstructionType::Split:
-                std::cout << bytecode[i + 1] << ", " << bytecode[i + 2];
-                i += 3;
-                break;
-            case cppre::detail::InstructionType::Jump:
-            case cppre::detail::InstructionType::Save:
-                std::cout << bytecode[i + 1];
-                i += 2;
-                break;
-            case cppre::detail::InstructionType::String: {
-                const size_t sidx = bytecode[i + 1];
-                std::cout << sidx << " (" << MAGENTA << "\"" << strings[sidx]
-                          << "\"" << RESET << ")";
-                i += 2;
-                break;
-            }
-            case cppre::detail::InstructionType::Anchor:
-                std::cout << static_cast<char>(bytecode[i + 1]);
-                i += 2;
-                break;
-            default:
-                i++;
-        }
-        std::cout << std::endl;
+        i = print_inst(i);
+        std::cout << '\n';
     }
+    std::cout << std::endl;
 }
 
 // 1200

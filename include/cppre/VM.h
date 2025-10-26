@@ -10,7 +10,6 @@
 #include <memory>
 #include <optional>
 #include <string_view>
-#include <unordered_set>
 #include <vector>
 
 namespace cppre::detail {
@@ -67,9 +66,11 @@ struct VM {
     auto run_thread(ThreadList& list, Thread const& thread,
                     std::string_view const& str) -> bool;
 
+    auto print_threadlist(ThreadList const& tlist) const -> void;
+    auto print_inst(int i) const -> int;
     auto print_bytecode() const -> void;
 
-    std::unordered_set<size_t> marked_insts;
+    std::vector<bool> visited;
 
    public:
     size_t ngroups = 0, proglen = 0;

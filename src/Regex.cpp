@@ -72,8 +72,8 @@ auto Regex::setup_for_match() const -> void {
 auto Regex::setup_for_search() const -> void {
     const size_t len = m_vm.bytecode.size();
     m_vm.bytecode[0] = static_cast<uint16_t>(InstructionType::Split);
-    m_vm.bytecode[1] = 3;
-    m_vm.bytecode[2] = 6;
+    m_vm.bytecode[1] = 6;
+    m_vm.bytecode[2] = 3;
     m_vm.bytecode[3] = static_cast<uint16_t>(InstructionType::Any);
     m_vm.bytecode[4] = static_cast<uint16_t>(InstructionType::Jump);
     m_vm.bytecode[5] = 0;
