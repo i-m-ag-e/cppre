@@ -46,11 +46,9 @@ auto VM::from_ast(const ASTNodePtr& ast) -> void {
 
 auto VM::make_code(WildcardNode const&) -> void {
     bytecode.push_back(static_cast<uint16_t>(InstructionType::Any));
-    proglen++;
 }
 
 auto VM::make_code(LiteralNode const& node) -> void {
-    proglen++;
     bytecode.push_back(static_cast<uint16_t>(InstructionType::String));
     bytecode.push_back(static_cast<uint16_t>(strings.size()));
     strings.push_back(std::string_view(node.value));
@@ -58,14 +56,12 @@ auto VM::make_code(LiteralNode const& node) -> void {
 
 auto VM::make_code(GroupNode const& node) -> void {
     if (node.group_id != -1) {
-        proglen++;
         bytecode.push_back(static_cast<uint16_t>(InstructionType::Save));
         bytecode.push_back(2 * node.group_id);
         ngroups = node.group_id + 1;
     }
     from_ast(node.node);
     if (node.group_id != -1) {
-        proglen++;
         bytecode.push_back(static_cast<uint16_t>(InstructionType::Save));
         bytecode.push_back(2 * node.group_id + 1);
     }
@@ -85,7 +81,6 @@ auto VM::make_code(AlternationNode const& node) -> void {
 
     from_ast(node.right);
     bytecode[jump_pos + 1] = static_cast<uint16_t>(bytecode.size());
-    proglen += 2;
 }
 
 auto VM::make_code(ConcatNode const& node) -> void {
@@ -102,7 +97,6 @@ auto VM::make_code(RepNode const& node) -> void {
             bytecode.push_back(static_cast<uint16_t>(InstructionType::Split));
             bytecode.push_back(static_cast<uint16_t>(jump_pos));
             bytecode.push_back(bytecode.size() + 1);
-            proglen++;
             break;
         }
         case cppre::detail::QuantifierType::Optional:
@@ -111,7 +105,6 @@ auto VM::make_code(RepNode const& node) -> void {
             bytecode.push_back(static_cast<uint16_t>(InstructionType::Split));
             bytecode.push_back(split_pos + 3);
             bytecode.push_back(-1);
-            proglen++;
 
             from_ast(node.node);
 
@@ -119,7 +112,6 @@ auto VM::make_code(RepNode const& node) -> void {
                 bytecode.push_back(
                     static_cast<uint16_t>(InstructionType::Jump));
                 bytecode.push_back(split_pos);
-                proglen++;
             }
             bytecode[split_pos + 2] = bytecode.size();
             break;
@@ -142,8 +134,6 @@ auto inst2string(InstructionType type) -> std::string_view {
             return "Match";
         case cppre::detail::InstructionType::String:
             return "String";
-        case cppre::detail::InstructionType::NoOp:
-            return "NoOp";
         case cppre::detail::InstructionType::Anchor:
             return "Anchor";
     }
@@ -167,9 +157,9 @@ auto update_saved(Thread::SharedSavedArray&& saved, size_t idx,
 }
 }  // namespace
 
-Thread::Thread(size_t ngroups)
-    : pc(0),
-      sp(0),
+Thread::Thread(size_t ngroups, size_t pc, size_t sp)
+    : pc(pc),
+      sp(sp),
       saved(std::make_shared<Thread::SavedArray>(2 * ngroups, -1)) {}
 Thread::Thread(size_t pc, size_t sp, SharedSavedArray const& old_saved)
     : pc(pc), sp(sp), saved(old_saved) {}
@@ -188,11 +178,8 @@ VM::VM(ASTNodePtr const& ast) {
     bytecode.push_back(static_cast<uint16_t>(InstructionType::Jump));
     bytecode.push_back(0);
     from_ast(ast);
-    bytecode.push_back(static_cast<uint16_t>(InstructionType::NoOp));
-    bytecode.push_back(static_cast<uint16_t>(InstructionType::NoOp));
     bytecode.push_back(static_cast<uint16_t>(InstructionType::Match));
     visited.resize(bytecode.size(), false);
-    proglen += 9;
 }
 
 auto VM::add_thread(ThreadList& tlist, Thread&& new_thread,
@@ -220,12 +207,6 @@ auto VM::add_thread(ThreadList& tlist, Thread&& new_thread,
                        str);
             break;
         }
-        case cppre::detail::InstructionType::NoOp:
-            while (bytecode[++new_thread.pc] ==
-                   static_cast<uint16_t>(InstructionType::NoOp)) {
-            }
-            add_thread(tlist, std::move(new_thread), str);
-            break;
         case cppre::detail::InstructionType::Jump:
             new_thread.pc = bytecode[pc + 1];
             add_thread(tlist, std::move(new_thread), str);
@@ -333,16 +314,16 @@ auto VM::print_bytecode() const -> void {
     std::cout << "\n";
 }
 
-auto VM::run_vm(std::string_view const& str)
-    -> std::optional<Thread::SavedArray> {
+auto VM::run_vm(std::string_view const& str,
+                int pc_offset) -> std::optional<Thread::SavedArray> {
     ThreadList clist;
     ThreadList nlist;
-    clist.reserve(proglen);
-    nlist.reserve(proglen);
+    clist.reserve(bytecode.size());
+    nlist.reserve(bytecode.size());
 
     std::optional<std::vector<int>> saved;
 
-    add_thread(clist, Thread(ngroups), str);
+    add_thread(clist, Thread(ngroups, pc_offset, 0), str);
     do {
         std::fill(visited.begin(), visited.end(), false);
 
@@ -391,9 +372,9 @@ auto VM::print_inst(int i) const -> int {
     }
 }
 
-auto VM::print_code() const -> void {
+auto VM::print_code(size_t offset) const -> void {
     std::cout << std::left;
-    for (size_t i = 0; i < bytecode.size();) {
+    for (size_t i = offset; i < bytecode.size();) {
         i = print_inst(i);
         std::cout << '\n';
     }
