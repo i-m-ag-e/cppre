@@ -2,8 +2,6 @@
 #include <cppre/Regex.h>
 #include <cppre/VM.h>
 
-#include <algorithm>
-#include <cstdint>
 #include <optional>
 #include <string>
 #include <string_view>
@@ -59,57 +57,37 @@ auto Match::from_saved_array(detail::Thread::SavedArray const& saved,
 Regex::Regex(std::string const& pat)
     : m_pattern(pat), m_ast(parse_regex(pat)), m_vm(m_ast) {}
 
-auto Regex::setup_for_match() const -> void {
-    const size_t len = m_vm.bytecode.size();
-    m_vm.bytecode[0] = static_cast<uint16_t>(InstructionType::Jump);
-    m_vm.bytecode[1] = 6;
-    std::fill(m_vm.bytecode.begin() + 2, m_vm.bytecode.begin() + 6,
-              static_cast<uint16_t>(InstructionType::NoOp));
-    m_vm.bytecode[len - 3] = static_cast<uint16_t>(InstructionType::Anchor);
-    m_vm.bytecode[len - 2] = static_cast<uint16_t>('Z');
-}
-
-auto Regex::setup_for_search() const -> void {
-    const size_t len = m_vm.bytecode.size();
-    m_vm.bytecode[0] = static_cast<uint16_t>(InstructionType::Split);
-    m_vm.bytecode[1] = 3;
-    m_vm.bytecode[2] = 6;
-    m_vm.bytecode[3] = static_cast<uint16_t>(InstructionType::Any);
-    m_vm.bytecode[4] = static_cast<uint16_t>(InstructionType::Jump);
-    m_vm.bytecode[5] = 0;
-    m_vm.bytecode[len - 3] = static_cast<uint16_t>(InstructionType::NoOp);
-    m_vm.bytecode[len - 2] = static_cast<uint16_t>(InstructionType::NoOp);
-}
+namespace {
+constexpr size_t kMatchPCOffset = 6;
+constexpr size_t kSearchPCOffset = 0;
+}  // namespace
 
 auto Regex::search_bool(std::string const& str) const -> bool {
-    setup_for_search();
-    m_vm.print_code();
-    return (bool)m_vm.run_vm(str);
+    m_vm.print_code(kSearchPCOffset);
+    return (bool)m_vm.run_vm(str, kSearchPCOffset);
 }
 
 auto Regex::search(std::string const& str) const -> std::optional<Match> {
-    setup_for_search();
-    m_vm.print_code();
+    m_vm.print_code(kSearchPCOffset);
 
-    auto saved = m_vm.run_vm(str);
+    auto saved = m_vm.run_vm(str, kSearchPCOffset);
     if (saved)
         return std::make_optional(Match::from_saved_array(*saved, str));
     return {};
 }
 
 auto Regex::match_bool(std::string const& str) const -> bool {
-    setup_for_match();
     m_vm.print_code();
-    bool a = (bool)m_vm.run_vm(str);
-    return a;
+
+    auto saved = m_vm.run_vm(str, kMatchPCOffset);
+    return saved && (*saved)[1] == (int)str.length();
 }
 
 auto Regex::match(std::string const& str) const -> std::optional<Match> {
-    setup_for_match();
     m_vm.print_code();
 
-    auto saved = m_vm.run_vm(str);
-    if (saved)
+    auto saved = m_vm.run_vm(str, kMatchPCOffset);
+    if (saved && (*saved)[1] == (int)str.length())
         return std::make_optional(Match::from_saved_array(*saved, str));
     return {};
 }

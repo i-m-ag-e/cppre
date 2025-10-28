@@ -10,7 +10,6 @@
 #include <memory>
 #include <optional>
 #include <string_view>
-#include <unordered_set>
 #include <vector>
 
 namespace cppre::detail {
@@ -22,7 +21,6 @@ enum class InstructionType : uint16_t {
     Anchor,
     Jump,
     Match,
-    NoOp
 };
 
 enum class AnchorType : char {
@@ -44,7 +42,7 @@ struct Thread {
     size_t sp;
     SharedSavedArray saved;
 
-    explicit Thread(size_t ngroups);
+    explicit Thread(size_t ngroups, size_t pc, size_t sp);
     explicit Thread(size_t pc, size_t sp, SharedSavedArray&& old_saved);
     explicit Thread(size_t pc, size_t sp, SharedSavedArray const& old_saved);
     explicit Thread(size_t pc, SharedSavedArray&& old_saved);
@@ -67,19 +65,21 @@ struct VM {
     auto run_thread(ThreadList& list, Thread const& thread,
                     std::string_view const& str) -> bool;
 
+    auto print_threadlist(ThreadList const& tlist) const -> void;
+    auto print_inst(int i) const -> int;
     auto print_bytecode() const -> void;
 
-    std::unordered_set<size_t> marked_insts;
+    std::vector<bool> visited;
 
    public:
-    size_t ngroups = 0, proglen = 0;
+    size_t ngroups = 0;
     Bytecode bytecode;
     std::vector<std::string_view> strings;
 
     VM(ASTNodePtr const&);
-    auto run_vm(std::string_view const& str)
-        -> std::optional<Thread::SavedArray>;
-    auto print_code() const -> void;
+    auto run_vm(std::string_view const& str,
+                int pc_offset) -> std::optional<Thread::SavedArray>;
+    auto print_code(size_t offset = 0) const -> void;
 };
 }  // namespace cppre::detail
 

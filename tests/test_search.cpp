@@ -1,69 +1,137 @@
 #include <cppre/Regex.h>
 #include <gtest/gtest.h>
 
-#define test_search(pat, str) \
-    { ASSERT_EQ(cppre::Regex(pat).search_bool(str), true); }
-#define test_no_search(pat, str) \
-    { ASSERT_EQ(cppre::Regex(pat).search_bool(str), false); }
+#include <string>
+#include <string_view>
+#include <vector>
+using namespace std::string_literals;
 
-TEST(IntegrationTestSearch, TestLiterals) {
-    test_search("a", "b_a_c");
-    test_search("bc", "abcd");
-    test_search("ab", "abcd");
+// #define test_search(pat, str) \
+//     { EXPECT_EQ(cppre::Regex(pat).search_bool(str), true); }
+// #define test_no_search(pat, str) \
+//     { EXPECT_EQ(cppre::Regex(pat).search_bool(str), false); }
+
+#define test_search(pat, s, ret)                                \
+    {                                                           \
+        std::vector<std::string_view> matches ret;              \
+        std::string ss(s);                                      \
+        SCOPED_TRACE("Searching '"s + pat + "' against " + s);  \
+        cppre::Regex re(pat);                                   \
+        auto om = re.search(ss);                                \
+        EXPECT_TRUE((bool)om);                                  \
+        auto const& m = *om;                                    \
+        EXPECT_EQ(matches.size(), m.submatches().size() + 1);   \
+        print_match(m);                                         \
+        EXPECT_EQ(matches[0], m.str());                         \
+        for (size_t i = 1; i < m.submatches().size(); ++i) {    \
+            EXPECT_EQ(matches[i], m.submatches()[i - 1].str()); \
+        }                                                       \
+    }
+
+#define test_no_search(pat, str)                                 \
+    {                                                            \
+        SCOPED_TRACE("Searching '"s + pat + "' against " + str); \
+        cppre::Regex re(pat);                                    \
+        auto om = re.search(str);                                \
+        EXPECT_FALSE((bool)om);                                  \
+    }
+
+auto print_match(cppre::Match const& match) -> void {
+    if (match.submatches().size() > 0) {
+        std::cout << "Match { \n"
+                  << "    begin: " << match.get_begin() << ",\n"
+                  << "    end:   " << match.get_end() << ",\n"
+                  << "    match: '" << match.str() << "',\n"
+                  << "    submatches: (" << match.submatches().size()
+                  << ") [\n";
+        for (size_t i = 0; i < match.submatches().size(); ++i) {
+            std::cout << "        ";
+            print_match(match.submatches()[i]);
+            std::cout << ",\n";
+        }
+        std::cout << "    ]\n}";
+    } else {
+        std::cout << "Match< '" << match.str() << "'; (" << match.get_begin()
+                  << ", " << match.get_end() << ")>";
+    }
+}
+
+TEST(IntegrationSearchTest, TestLiterals) {
+    test_search("a", "b_a_c", {"a"});
+    test_search("bc", "abcd", {"bc"});
+    test_search("ab", "abcd", {"ab"});
     test_no_search("x", "abc");
     test_no_search("abc", "ab");
 }
 
-TEST(IntegrationTestSearch, TestWildcard) {
-    test_search(".", "abc");
-    test_search("b.d", "ab_de");
-    test_search("b.d", "prefix_bcd_suffix");
+TEST(IntegrationSearchTest, TestWildcard) {
+    test_search(".", "abc", {"a"});
+    test_search("b.d", "ab_de", {"b_d"});
+    test_search("b.d", "prefix_bcd_suffix", {"bcd"});
     test_no_search("a.c", "ab_c");
 }
 
-TEST(IntegrationTestSearch, TestAlternation) {
-    test_search("cat|dog", "I have a dog.");
-    test_search("cat|dog", "This is a catastrophe.");
+TEST(IntegrationSearchTest, TestAlternation) {
+    test_search("cat|dog", "I have a dog.", {"dog"});
+    test_search("cat|dog", "This is a catastrophe.", {"cat"});
     test_no_search("cat|dog", "My pet is a bird.");
 
-    test_search("a(b|c)d", "prefix_acd_suffix");
-    test_search("a(b|c)d", "prefix_abd_suffix");
+    test_search("a(b|c)d", "prefix_acd_suffix", ({"acd", "c"}));
+    test_search("a(b|c)d", "prefix_abd_suffix", ({"abd", "b"}));
     test_no_search("a(b|c)d", "prefix_ad_suffix");
 }
 
-TEST(IntegrationTestSearch, TestRepetition) {
-    test_search("a*", "bbb");
-    test_search("a*", "");
+TEST(IntegrationSearchTest, TestRepetition) {
+    test_search("a*", "bbb", {""});
+    test_search("a*", "", {""});
 
-    test_search("a+", "bbb_aaa_ccc");
+    test_search("a+", "bbb_aaa_ccc", {"aaa"});
     test_no_search("a+", "bbb_ccc");
 
-    test_search("ab*c", "zzzaczzz");
-    test_search("ab*c", "zzzabcdzzz");
-    test_search("ab*c", "zzzabcdzzz");
-    test_search("ab+c", "zzzabcdzzz");
+    test_search("ab*c", "zzzaczzz", {"ac"});
+    test_search("ab*c", "zzzabcdzzz", {"abc"});
+    test_search("ab+c", "zzzabcdzzz", {"abc"});
     test_no_search("ab+c", "zzzaczzz");
 }
 
-TEST(IntegrationTestSearch, TestGroups) {
-    test_search("(ab)+", "prefix_ababab_suffix");
-    test_search("(ab)+", "ab");
-    test_no_search("(ab)+", "prefix_a_suffix");
+TEST(IntegrationSearchTest, TestGroups) {
+    test_search("(a)", "b_a_c", ({"a", "a"}));
+    test_search("a(bc)d", "xyz_abcd_xyz", ({"abcd", "bc"}));
+    test_no_search("a(bc)d", "xyz_ad_xyz");
 
-    test_search("a(b|c)?d", "xyz_ad_123");
-    test_search("a(b|c)?d", "xyz_abd_123");
-    test_search("a(b|c)?d", "xyz_acd_123");
+    test_search("(a)*", "bbbaaaaccc", ({"", ""}));
+    test_search("(ab)+", "prefix_ababab_suffix", ({"ababab", "ab"}));
+
+    test_search("a(b|c)?d", "xyz_ad_123", ({"ad", ""}));
+    test_search("a(b|c)?d", "xyz_abd_123", ({"abd", "b"}));
+    test_search("a(b|c)?d", "xyz_acd_123", ({"acd", "c"}));
+
+    test_search("(a)(b)", "prefix_ab_suffix", ({"ab", "a", "b"}));
+    test_search("a(b.)c(d*)e", "prefix_ab@cddde_suffix",
+                ({"ab@cddde", "b@", "ddd"}));
+    test_search("(a(b)c)", "prefix_abc_suffix", ({"abc", "abc", "b"}));
+    test_search("a(b(c)?)d", "prefix_abcd_suffix", ({"abcd", "bc", "c"}));
+    test_search("a(b(c)?)d", "prefix_abd_suffix", ({"abd", "b", ""}));
 }
 
-TEST(IntegrationTestSearch, TestComplexPatterns) {
-    test_search("a(b|c)*d", "xyz_abccbbcd_xyz");
-    test_search("a(b|c)*d", "xyz_ad_xyz");
-    test_no_search("a(b|c)*d", "ac_bd");
+TEST(IntegrationSearchTest, TestComplexPatterns) {
+    test_search("a(b|c)*d", "xyz_abccbbcd_xyz", ({"abccbbcd", "c"}));
+    test_search("a(b|c)*d", "xyz_ad_xyz", ({"ad", ""}));
+    test_search("a(b|c)*d", "xyz_abd_a_xyz", ({"abd", "b"}));
 
-    test_search("(a.)+", "prefix_a1a2_suffix");
-    test_search("(a.)+", "prefix_a_suffix");
+    test_search("(a.)+", "prefix_a1a2_suffix", ({"a1a2", "a2"}));
+    test_search("(a.)+", "prefix_a_suffix", ({"a_", "a_"}));
     test_no_search("(a.)+", "prefix_a");
 
-    test_search("a(b?c+)+d", "prefix_acbccd_suffix");
+    test_search("a(b?c+)+d", "prefix_acbccd_suffix", ({"acbccd", "bcc"}));
     test_no_search("a(b?c+)+d", "prefix_abd_suffix");
+
+    test_search("(a(b(c)d)e)", "prefix_abcde_suffix",
+                ({"abcde", "abcde", "bcd", "c"}));
+    test_search("a((b)|(c))*d", "prefix_abccbbcd_suffix",
+                ({"abccbbcd", "c", "b", "c"}));
+    test_search("(a.)+|(b.)+", "prefix_b1b2_suffix", ({"b1b2", "", "b2"}));
+    test_search("(a.)+|(b.)+", "prefix_a1a2_suffix", ({"a1a2", "a2", ""}));
+    test_search("a((b?c+)+)d", "prefix_acbccd_suffix",
+                ({"acbccd", "cbcc", "bcc"}));
 }

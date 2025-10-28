@@ -39,9 +39,6 @@ class Regex {
     detail::ASTNodePtr m_ast;
     mutable detail::VM m_vm;
 
-    auto setup_for_match() const -> void;
-    auto setup_for_search() const -> void;
-
    public:
     Regex(std::string const& pat);
 

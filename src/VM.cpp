@@ -5,7 +5,6 @@
 #include <cppre/AST.h>
 #include <cppre/Color.h>
 #include <cppre/VM.h>
-#include <sys/types.h>
 
 #include <algorithm>
 #include <cassert>
@@ -47,11 +46,9 @@ auto VM::from_ast(const ASTNodePtr& ast) -> void {
 
 auto VM::make_code(WildcardNode const&) -> void {
     bytecode.push_back(static_cast<uint16_t>(InstructionType::Any));
-    proglen++;
 }
 
 auto VM::make_code(LiteralNode const& node) -> void {
-    proglen++;
     bytecode.push_back(static_cast<uint16_t>(InstructionType::String));
     bytecode.push_back(static_cast<uint16_t>(strings.size()));
     strings.push_back(std::string_view(node.value));
@@ -59,14 +56,12 @@ auto VM::make_code(LiteralNode const& node) -> void {
 
 auto VM::make_code(GroupNode const& node) -> void {
     if (node.group_id != -1) {
-        proglen++;
         bytecode.push_back(static_cast<uint16_t>(InstructionType::Save));
         bytecode.push_back(2 * node.group_id);
         ngroups = node.group_id + 1;
     }
     from_ast(node.node);
     if (node.group_id != -1) {
-        proglen++;
         bytecode.push_back(static_cast<uint16_t>(InstructionType::Save));
         bytecode.push_back(2 * node.group_id + 1);
     }
@@ -86,7 +81,6 @@ auto VM::make_code(AlternationNode const& node) -> void {
 
     from_ast(node.right);
     bytecode[jump_pos + 1] = static_cast<uint16_t>(bytecode.size());
-    proglen += 2;
 }
 
 auto VM::make_code(ConcatNode const& node) -> void {
@@ -103,7 +97,6 @@ auto VM::make_code(RepNode const& node) -> void {
             bytecode.push_back(static_cast<uint16_t>(InstructionType::Split));
             bytecode.push_back(static_cast<uint16_t>(jump_pos));
             bytecode.push_back(bytecode.size() + 1);
-            proglen++;
             break;
         }
         case cppre::detail::QuantifierType::Optional:
@@ -112,7 +105,6 @@ auto VM::make_code(RepNode const& node) -> void {
             bytecode.push_back(static_cast<uint16_t>(InstructionType::Split));
             bytecode.push_back(split_pos + 3);
             bytecode.push_back(-1);
-            proglen++;
 
             from_ast(node.node);
 
@@ -120,7 +112,6 @@ auto VM::make_code(RepNode const& node) -> void {
                 bytecode.push_back(
                     static_cast<uint16_t>(InstructionType::Jump));
                 bytecode.push_back(split_pos);
-                proglen++;
             }
             bytecode[split_pos + 2] = bytecode.size();
             break;
@@ -143,8 +134,6 @@ auto inst2string(InstructionType type) -> std::string_view {
             return "Match";
         case cppre::detail::InstructionType::String:
             return "String";
-        case cppre::detail::InstructionType::NoOp:
-            return "NoOp";
         case cppre::detail::InstructionType::Anchor:
             return "Anchor";
     }
@@ -168,9 +157,9 @@ auto update_saved(Thread::SharedSavedArray&& saved, size_t idx,
 }
 }  // namespace
 
-Thread::Thread(size_t ngroups)
-    : pc(0),
-      sp(0),
+Thread::Thread(size_t ngroups, size_t pc, size_t sp)
+    : pc(pc),
+      sp(sp),
       saved(std::make_shared<Thread::SavedArray>(2 * ngroups, -1)) {}
 Thread::Thread(size_t pc, size_t sp, SharedSavedArray const& old_saved)
     : pc(pc), sp(sp), saved(old_saved) {}
@@ -183,42 +172,41 @@ Thread::Thread(size_t pc, SharedSavedArray&& old_saved)
 
 VM::VM(ASTNodePtr const& ast) {
     bytecode.push_back(static_cast<uint16_t>(InstructionType::Split));
-    bytecode.push_back(3);
     bytecode.push_back(6);
+    bytecode.push_back(3);
     bytecode.push_back(static_cast<uint16_t>(InstructionType::Any));
     bytecode.push_back(static_cast<uint16_t>(InstructionType::Jump));
     bytecode.push_back(0);
     from_ast(ast);
-    bytecode.push_back(static_cast<uint16_t>(InstructionType::NoOp));
-    bytecode.push_back(static_cast<uint16_t>(InstructionType::NoOp));
     bytecode.push_back(static_cast<uint16_t>(InstructionType::Match));
-    proglen += 9;
+    visited.resize(bytecode.size(), false);
 }
 
 auto VM::add_thread(ThreadList& tlist, Thread&& new_thread,
                     std::string_view const& str) -> void {
     size_t pc = new_thread.pc;
-    if (0xf000 & bytecode[pc]) {
+
+    if (visited[pc]) {
         return;
     }
 
-    bytecode[pc] |= 0xf000;
-    marked_insts.insert(pc);
-    switch (static_cast<InstructionType>(bytecode[pc] & 0xff)) {
+    visited[pc] = true;
+
+    if (new_thread.sp > str.length())
+        return;
+
+    switch (static_cast<InstructionType>(bytecode[pc])) {
         case cppre::detail::InstructionType::Split: {
             add_thread(
                 tlist,
                 Thread(bytecode[pc + 1], new_thread.sp, new_thread.saved), str);
             new_thread.pc = bytecode[pc + 2];
-            add_thread(tlist, std::move(new_thread), str);
+            add_thread(tlist,
+                       Thread(bytecode[pc + 2], new_thread.sp,
+                              std::move(new_thread.saved)),
+                       str);
             break;
         }
-        case cppre::detail::InstructionType::NoOp:
-            while (bytecode[new_thread.pc++] ==
-                   static_cast<uint16_t>(InstructionType::NoOp)) {
-            }
-            add_thread(tlist, std::move(new_thread), str);
-            break;
         case cppre::detail::InstructionType::Jump:
             new_thread.pc = bytecode[pc + 1];
             add_thread(tlist, std::move(new_thread), str);
@@ -271,14 +259,11 @@ auto VM::add_thread(ThreadList& tlist, Thread&& new_thread,
             tlist.push_back(std::move(new_thread));
             return;
     }
-    bytecode[pc] &= 0xff;
-    marked_insts.erase(pc);
 }
 
 auto VM::run_thread(ThreadList& tlist, Thread const& thread,
                     std::string_view const& given) -> bool {
     size_t pc = thread.pc;
-    bytecode[pc] &= 0xff;
     switch (static_cast<InstructionType>(bytecode[pc])) {
         case InstructionType::String: {
             std::string_view const& str = strings[bytecode[pc + 1]];
@@ -307,11 +292,14 @@ auto VM::run_thread(ThreadList& tlist, Thread const& thread,
     return false;
 }
 
-auto print_threadlist(ThreadList const& tl) {
+auto VM::print_threadlist(ThreadList const& tl) const -> void {
     std::cout << "ThreadList:\n";
     for (auto const& t : tl) {
-        std::cout << "    pc: " << t.pc << " sp: " << t.sp << "\n";
+        std::cout << "    - pc: ";
+        print_inst(t.pc);
+        std::cout << "\n      sp: " << t.sp << "\n";
     }
+    std::cout << "---------------\n";
 }
 
 auto VM::print_bytecode() const -> void {
@@ -326,68 +314,71 @@ auto VM::print_bytecode() const -> void {
     std::cout << "\n";
 }
 
-auto VM::run_vm(std::string_view const& str)
-    -> std::optional<Thread::SavedArray> {
+auto VM::run_vm(std::string_view const& str,
+                int pc_offset) -> std::optional<Thread::SavedArray> {
     ThreadList clist;
     ThreadList nlist;
-    clist.reserve(proglen);
-    nlist.reserve(proglen);
+    clist.reserve(bytecode.size());
+    nlist.reserve(bytecode.size());
 
-    add_thread(clist, Thread(ngroups), str);
+    std::optional<std::vector<int>> saved;
+
+    add_thread(clist, Thread(ngroups, pc_offset, 0), str);
     do {
-        std::for_each(marked_insts.cbegin(), marked_insts.cend(),
-                      [this](size_t pc) { bytecode[pc] &= 0xff; });
-        marked_insts.clear();
+        std::fill(visited.begin(), visited.end(), false);
 
         if (clist.empty())
-            return {};
+            break;
         for (auto const& thread : clist) {
             if (run_thread(nlist, thread, str)) {
-                for (auto i : *thread.saved)
-                    std::cout << i << " ";
-                std::cout << "\n";
-                return std::make_optional(std::move(*thread.saved));
+                if (!saved) {
+                    saved = std::make_optional(std::move(*thread.saved));
+                } else if ((*saved)[0] == (*thread.saved)[0] &&
+                           (*thread.saved)[1] > (*saved)[0]) {
+                    saved = std::make_optional(std::move(*thread.saved));
+                }
             }
         }
         std::swap(clist, nlist);
         nlist.clear();
     } while (true);
 
-    return {};
+    return saved;
 }
 
-auto VM::print_code() const -> void {
-    std::cout << std::left;
-    for (size_t i = 0; i < bytecode.size();) {
-        auto inst = static_cast<InstructionType>(bytecode[i]);
-        std::cout << std::setw(3) << i << " | " << std::setw(12)
-                  << inst2string(inst);
-        switch (inst) {
-            case cppre::detail::InstructionType::Split:
-                std::cout << bytecode[i + 1] << ", " << bytecode[i + 2];
-                i += 3;
-                break;
-            case cppre::detail::InstructionType::Jump:
-            case cppre::detail::InstructionType::Save:
-                std::cout << bytecode[i + 1];
-                i += 2;
-                break;
-            case cppre::detail::InstructionType::String: {
-                const size_t sidx = bytecode[i + 1];
-                std::cout << sidx << " (" << MAGENTA << "\"" << strings[sidx]
-                          << "\"" << RESET << ")";
-                i += 2;
-                break;
-            }
-            case cppre::detail::InstructionType::Anchor:
-                std::cout << static_cast<char>(bytecode[i + 1]);
-                i += 2;
-                break;
-            default:
-                i++;
+auto VM::print_inst(int i) const -> int {
+    auto inst = static_cast<InstructionType>(bytecode[i]);
+    std::cout << std::setw(3) << i << " | " << std::setw(12)
+              << inst2string(inst);
+    switch (inst) {
+        case cppre::detail::InstructionType::Split:
+            std::cout << bytecode[i + 1] << ", " << bytecode[i + 2];
+            return i + 3;
+        case cppre::detail::InstructionType::Jump:
+        case cppre::detail::InstructionType::Save:
+            std::cout << bytecode[i + 1];
+            return i + 2;
+        case cppre::detail::InstructionType::String: {
+            const size_t sidx = bytecode[i + 1];
+            std::cout << sidx << " (" << MAGENTA << "\"" << strings[sidx]
+                      << "\"" << RESET << ")";
+            return i + 2;
         }
-        std::cout << std::endl;
+        case cppre::detail::InstructionType::Anchor:
+            std::cout << static_cast<char>(bytecode[i + 1]);
+            return i + 2;
+        default:
+            return i + 1;
     }
+}
+
+auto VM::print_code(size_t offset) const -> void {
+    std::cout << std::left;
+    for (size_t i = offset; i < bytecode.size();) {
+        i = print_inst(i);
+        std::cout << '\n';
+    }
+    std::cout << std::endl;
 }
 
 // 1200
