@@ -6,6 +6,7 @@
 
 #include <iomanip>
 #include <iostream>
+#include <ostream>
 #include <sstream>
 #include <utility>
 
@@ -86,6 +87,79 @@ auto GroupNode::print_node(const int indent_level) const -> std::string {
         ss << group_id;
     ss << RESET YELLOW ">" RESET ", " << node->print_node(indent_level + 1)
        << ")";
+    return ss.str();
+}
+
+namespace {
+auto print_char(std::ostream& os, char c) -> void {
+    switch (c) {
+        case '\n':
+            os << "\\n";
+            break;
+        case '\t':
+            os << "\\t";
+            break;
+        case '\r':
+            os << "\\r";
+            break;
+        case '\b':
+            os << "\\b";
+            break;
+        default:
+            os << c;
+            break;
+    }
+}
+}  // namespace
+
+CharClassNode::CharClassNode(bool inverted)
+    : AST(ASTNodeType::CharClass),
+      in_class(kCharDomainLimit, false),
+      inverted(inverted) {}
+
+auto CharClassNode::print_node(int) const -> std::string {
+    std::stringstream ss;
+    ss << CYAN BOLD "CharClass" RESET << "([" GREEN;
+
+    if (inverted)
+        ss << YELLOW "^" RESET;
+
+    std::vector<int> idxs;
+    for (int i = 0; i < (int)in_class.size(); ++i) {
+        if (in_class[i]) {
+            idxs.push_back(i);
+        }
+    }
+
+    int range_begin = 0;
+    for (int i = 0; i < (int)idxs.size(); ++i) {
+        if (i < (int)idxs.size() - 1 && idxs[i + 1] - idxs[i] == 1) {
+            range_begin = i;
+            while (i < (int)idxs.size() && idxs[i + 1] - idxs[i] == 1)
+                ++i;
+
+            if (i - range_begin > 1) {
+                ss << YELLOW "(" GREEN;
+                print_char(ss, (char)idxs[range_begin]);
+                ss << YELLOW "-" GREEN;
+                print_char(ss, (char)idxs[i]);
+                ss << YELLOW ")" RESET;
+            } else {
+                ss << YELLOW "(" GREEN;
+                print_char(ss, (char)idxs[i - 1]);
+                ss << YELLOW ")" RESET;
+                ss << YELLOW "(" GREEN;
+                print_char(ss, (char)idxs[i]);
+                ss << YELLOW ")" RESET;
+            }
+        } else {
+            ss << YELLOW "(" GREEN;
+            print_char(ss, (char)idxs[i]);
+            ss << YELLOW ")" RESET;
+        }
+    }
+
+    ss << "])";
     return ss.str();
 }
 

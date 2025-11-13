@@ -20,6 +20,8 @@ enum class InstructionType : uint16_t {
     Any,
     Anchor,
     Jump,
+    CharClass,
+    InvertedCharClass,
     Match,
 };
 
@@ -59,6 +61,7 @@ struct VM {
     auto make_code(ConcatNode const& node) -> void;
     auto make_code(AlternationNode const& node) -> void;
     auto make_code(GroupNode const& node) -> void;
+    auto make_code(CharClassNode const& node) -> void;
 
     auto add_thread(ThreadList& list, Thread&& new_thread,
                     std::string_view const& str) -> void;
@@ -75,6 +78,7 @@ struct VM {
     size_t ngroups = 0;
     Bytecode bytecode;
     std::vector<std::string_view> strings;
+    std::vector<std::vector<bool>> char_classes;
 
     VM(ASTNodePtr const&);
     auto run_vm(std::string_view const& str,
