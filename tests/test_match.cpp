@@ -126,3 +126,47 @@ TEST(IntegrationTestMatch, TestComplexPatterns) {
     test_match("a(b?c+)+d", "acbccd", {"bcc"});
     test_no_match("a(b?c+)+d", "abd");
 }
+
+TEST(IntegrationTestMatch, TestCharClass) {
+    test_match("[abc]", "a", {"a"});
+    test_match("[abc]", "c", {"c"});
+    test_no_match("[abc]", "d");
+    test_no_match("[abc]", "ab");
+
+    test_match("[a-z]", "f", {"f"});
+    test_match("[0-9]+", "12345", {"12345"});
+    test_match("[a-zA-Z0-9]+", "Test123", {"Test123"});
+    test_no_match("[a-z]", "A");
+    test_no_match("[0-9]", "a");
+
+    test_match("[^abc]", "d", {"d"});
+    test_match("[^a-z]", "A", {"A"});
+    test_match("[^0-9]+", "ABC", {"ABC"});
+    test_no_match("[^abc]", "a");
+
+    test_match("[a-c-]", "-", {"-"});
+    test_match("[a-c-]", "b", {"b"});
+    test_match("[-abc]", "-", {"-"});
+    test_match("[abc-]", "-", {"-"});
+    test_match("[a^b]", "^", {"^"});
+
+    test_match("[\\^abc]", "^", {"^"});
+    test_match("[\\-abc]", "-", {"-"});
+    test_match("[a\\-c]", "-", {"-"});
+
+    // --- Corrected Tests for ']' ---
+    test_match("[a]]", "a]", {"a]"});
+    test_match("[\\]ab]", "]", {"]"});
+    test_match("[a\\]c]", "]", {"]"});
+
+    // --- Corrected Failing Cases (based on your feedback) ---
+    test_no_match("[]ab]", "]");
+    test_no_match("[]ab]", "a");
+    test_no_match("[^]ab]", "x");
+    test_match("[^]ab]", "xab]", {"xab]"});
+
+    test_match("[a-c]+", "abccba", {"abccba"});
+    test_match("[^a-c]+", "xyz", {"xyz"});
+    test_match("a[a-z]+d", "axyzd", {"axyzd"});
+    test_no_match("a[a-z]+d", "a123d");
+}

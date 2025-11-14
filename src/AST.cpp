@@ -119,7 +119,7 @@ CharClassNode::CharClassNode(bool inverted)
 
 auto CharClassNode::print_node(int) const -> std::string {
     std::stringstream ss;
-    ss << CYAN BOLD "CharClass" RESET << "([" GREEN;
+    ss << CYAN BOLD "CharClass" RESET << "([";
 
     if (inverted)
         ss << YELLOW "^" RESET;

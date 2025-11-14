@@ -135,3 +135,42 @@ TEST(IntegrationSearchTest, TestComplexPatterns) {
     test_search("a((b?c+)+)d", "prefix_acbccd_suffix",
                 ({"acbccd", "cbcc", "bcc"}));
 }
+
+TEST(IntegrationSearchTest, TestCharClass) {
+    test_search("[abc]", "z_c_z", {"c"});
+    test_no_search("[abc]", "xyz");
+
+    test_search("[a-z]", "123_f_789", {"f"});
+    test_search("[0-9]+", "abc123def", {"123"});
+    test_search("[a-zA-Z0-9]+", "!!Test123!!", {"Test123"});
+    test_no_search("[a-z]", "123_A_456");
+
+    test_search("[^abc]", "aaabd", {"d"});
+    test_search("[^a-z]", "abcA", {"A"});
+    test_search("[^0-9]+", "123ABC456", {"ABC"});
+    test_no_search("[^abc]", "abc");
+
+    test_search("[a-c-]", "xyz-", {"-"});
+    test_search("[a-c-]", "xyzb", {"b"});
+    test_search("[-abc]", "xyz-", {"-"});
+    test_search("[abc-]", "xyz-", {"-"});
+    test_search("[a^b]", "z^z", {"^"});
+
+    test_search("[\\^abc]", "z^z", {"^"});
+    test_search("[\\-abc]", "z-z", {"-"});
+
+    // --- Corrected Tests for ']' ---
+    test_search("[\\]ab]", "z]z", {"]"});
+    test_search("[a]]", "xxxa]xxx", {"a]"});
+
+    // --- Corrected Failing Cases (based on your feedback) ---
+    test_no_search("[]ab]", "z]z");
+    test_no_search("[]ab]", "zaz");
+    test_no_search("[^]ab]", "xyz");
+    test_search("[^]ab]", "xyz_aab]_xyz", {"aab]"});
+
+    test_search("[a-c]+", "xyzabccbaxyz", {"abccba"});
+    test_search("[^a-c]+", "abcxyzabc", {"xyz"});
+    test_search("a[a-z]+d", "123axyzd456", {"axyzd"});
+    test_no_search("a[a-z]+d", "123a123d456");
+}

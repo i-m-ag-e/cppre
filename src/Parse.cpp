@@ -5,7 +5,6 @@
 #include <cppre/Parse.h>
 
 #include <cstdio>
-#include <iostream>
 #include <memory>
 #include <stdexcept>
 #include <string_view>
@@ -32,7 +31,7 @@ struct Parser {
         return pattern.at(current_pos);
     }
     [[nodiscard]] auto peek_next() const -> char {
-        if (is_at_end() || current_pos + 1 >= pattern.size()) {
+        if (current_pos + 1 >= pattern.size()) {
             return '\0';
         }
         return pattern.at(current_pos + 1);
@@ -52,7 +51,7 @@ struct Parser {
 };
 
 static constexpr std::string_view kQuantifiers = "*+?";
-static constexpr std::string_view kMetacharacters = ".|()[]*+?";
+static constexpr std::string_view kMetacharacters = ".|()[*+?";
 
 enum EscapeType { Char, CharClass };
 static auto escape(char c) -> std::pair<EscapeType, char> {
@@ -137,6 +136,10 @@ auto parse_concat_term(Parser& parser) -> ASTNodePtr {
 
         case '[':
             return parse_char_class(parser);
+
+        case ')':
+            throw std::runtime_error(
+                "Closing paranthesis '(' without corresponding open one");
 
         default:
             return parse_string(parser);
@@ -242,7 +245,6 @@ auto parse_char_class(Parser& parser) -> ASTNodePtr {
     while (!parser.is_at_end() && parser.peek() != ']') {
         char rb = parse_char(parser);
 
-        std::cout << "rb: " << rb << " (" << (int)rb << ")" << '\n';
         if (parser.peek() == '-') {
             parser.advance();
             if (parser.peek() == ']' || parser.is_at_end()) {
@@ -252,7 +254,7 @@ auto parse_char_class(Parser& parser) -> ASTNodePtr {
             }
 
             char rc = parse_char(parser);
-            if (rb < rc)
+            if (rb <= rc)
                 std::fill(node->in_class.begin() + rb,
                           node->in_class.begin() + rc + 1, true);
         } else {
@@ -261,7 +263,7 @@ auto parse_char_class(Parser& parser) -> ASTNodePtr {
     }
 
     if (parser.is_at_end() || parser.peek() != ']') {
-        std::runtime_error("Unmatched '[' in pattern");
+        throw std::runtime_error("Unmatched '[' in pattern");
     }
     parser.advance();
     return node;
