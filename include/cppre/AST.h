@@ -19,7 +19,8 @@ enum class ASTNodeType {
     Literal,
     Concat,
     Alternation,
-    Group
+    Group,
+    CharClass
 };
 
 struct AST {
@@ -80,6 +81,17 @@ struct GroupNode final : public AST {
     explicit GroupNode(ASTNodePtr&& node, int group_id);
     auto print_node(int indent_level) const -> std::string override;
     ~GroupNode() override = default;
+};
+
+struct CharClassNode final : public AST {
+    static constexpr size_t kCharDomainLimit = 255;
+
+    std::vector<bool> in_class;
+    bool inverted;
+
+    explicit CharClassNode(bool inverted);
+    auto print_node(int indent_level) const -> std::string override;
+    ~CharClassNode() override = default;
 };
 
 }  // namespace detail

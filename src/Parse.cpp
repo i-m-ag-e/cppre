@@ -4,7 +4,9 @@
 
 #include <cppre/Parse.h>
 
+#include <cstdio>
 #include <memory>
+#include <stdexcept>
 #include <string_view>
 #include <utility>
 
@@ -29,7 +31,7 @@ struct Parser {
         return pattern.at(current_pos);
     }
     [[nodiscard]] auto peek_next() const -> char {
-        if (is_at_end() || current_pos + 1 >= pattern.size()) {
+        if (current_pos + 1 >= pattern.size()) {
             return '\0';
         }
         return pattern.at(current_pos + 1);
@@ -38,10 +40,18 @@ struct Parser {
     [[nodiscard]] auto is_at_end() const -> bool {
         return current_pos >= pattern.size();
     }
+
+    [[nodiscard]] auto match(char c) -> bool {
+        if (peek() == c) {
+            advance();
+            return true;
+        }
+        return false;
+    }
 };
 
 static constexpr std::string_view kQuantifiers = "*+?";
-static constexpr std::string_view kMetacharacters = ".|()[]*+?";
+static constexpr std::string_view kMetacharacters = ".|()[*+?";
 
 enum EscapeType { Char, CharClass };
 static auto escape(char c) -> std::pair<EscapeType, char> {
@@ -72,6 +82,7 @@ static auto parse_alt_term(Parser& parser) -> ASTNodePtr;
 static auto parse_concat_term(Parser& parser) -> ASTNodePtr;
 static auto parse_string(Parser& parser) -> ASTNodePtr;
 static auto parse_group(Parser& parser) -> ASTNodePtr;
+static auto parse_char_class(Parser& parser) -> ASTNodePtr;
 
 auto parse_regex(std::string_view pattern) -> ASTNodePtr {
     Parser parser{.pattern = pattern, .group_id = 1};
@@ -122,6 +133,13 @@ auto parse_concat_term(Parser& parser) -> ASTNodePtr {
 
         case '(':
             return parse_group(parser);
+
+        case '[':
+            return parse_char_class(parser);
+
+        case ')':
+            throw std::runtime_error(
+                "Closing paranthesis '(' without corresponding open one");
 
         default:
             return parse_string(parser);
@@ -201,6 +219,54 @@ auto parse_group(Parser& parser) -> ASTNodePtr {
     }
     parser.advance();
     return std::make_unique<GroupNode>(std::move(node), group_id);
+}
+
+namespace {
+auto parse_char(Parser& parser) -> char {
+    if (parser.is_at_end())
+        return '\0';
+    char c = parser.advance();
+    if (c == '\\') {
+        auto [esc_type, esc_char] = escape(parser.peek());
+        parser.advance();
+        return esc_char;
+    } else {
+        return c;
+    }
+}
+}  // namespace
+
+auto parse_char_class(Parser& parser) -> ASTNodePtr {
+    parser.advance();
+    bool inverted = parser.match('^');
+
+    auto node = std::make_unique<CharClassNode>(inverted);
+
+    while (!parser.is_at_end() && parser.peek() != ']') {
+        char rb = parse_char(parser);
+
+        if (parser.peek() == '-') {
+            parser.advance();
+            if (parser.peek() == ']' || parser.is_at_end()) {
+                node->in_class[rb] = true;
+                node->in_class['-'] = true;
+                break;
+            }
+
+            char rc = parse_char(parser);
+            if (rb <= rc)
+                std::fill(node->in_class.begin() + rb,
+                          node->in_class.begin() + rc + 1, true);
+        } else {
+            node->in_class[rb] = true;
+        }
+    }
+
+    if (parser.is_at_end() || parser.peek() != ']') {
+        throw std::runtime_error("Unmatched '[' in pattern");
+    }
+    parser.advance();
+    return node;
 }
 
 }  // namespace cppre::detail

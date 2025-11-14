@@ -35,11 +35,12 @@ int main(int, char* argv[]) {
     using namespace cppre::detail;
 
     const std::string pattern = argv[1];
+    const std::string str = argv[2];
     const cppre::Regex re(pattern);
+    std::cout << "Testing \"" << str << "\" against \"" << pattern << "\"\n";
     std::cout << re.print_ast() << std::endl;
     re.print_code();
 
-    const std::string str = argv[2];
     auto match_res = re.match(str);
     if (match_res) {
         print_match(*match_res);

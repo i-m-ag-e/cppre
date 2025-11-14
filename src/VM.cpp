@@ -41,6 +41,9 @@ auto VM::from_ast(const ASTNodePtr& ast) -> void {
         case ASTNodeType::Group:
             make_code(static_cast<GroupNode const&>(*ast));
             break;
+        case ASTNodeType::CharClass:
+            make_code(static_cast<CharClassNode const&>(*ast));
+            break;
     }
 }
 
@@ -119,6 +122,14 @@ auto VM::make_code(RepNode const& node) -> void {
     }
 }
 
+auto VM::make_code(CharClassNode const& node) -> void {
+    char_classes.push_back(node.in_class);
+    bytecode.push_back(
+        static_cast<uint16_t>(node.inverted ? InstructionType::InvertedCharClass
+                                            : InstructionType::CharClass));
+    bytecode.push_back(char_classes.size() - 1);
+}
+
 namespace {
 auto inst2string(InstructionType type) -> std::string_view {
     switch (type) {
@@ -136,6 +147,10 @@ auto inst2string(InstructionType type) -> std::string_view {
             return "String";
         case cppre::detail::InstructionType::Anchor:
             return "Anchor";
+        case cppre::detail::InstructionType::CharClass:
+            return "CharClass";
+        case cppre::detail::InstructionType::InvertedCharClass:
+            return "InvertedCharClass";
     }
 }
 
@@ -283,6 +298,19 @@ auto VM::run_thread(ThreadList& tlist, Thread const& thread,
                            given);
             break;
 
+        case cppre::detail::InstructionType::CharClass:
+        case cppre::detail::InstructionType::InvertedCharClass: {
+            const size_t cidx = bytecode[pc + 1];
+            const InstructionType inst =
+                static_cast<InstructionType>(bytecode[pc]);
+            if (thread.sp < given.length() &&
+                char_classes[cidx][given[thread.sp]] ==
+                    (inst == InstructionType::CharClass))
+                add_thread(tlist, Thread(pc + 2, thread.sp + 1, thread.saved),
+                           given);
+            break;
+        }
+
         case InstructionType::Match:
             return true;
 
@@ -362,6 +390,15 @@ auto VM::print_inst(int i) const -> int {
             const size_t sidx = bytecode[i + 1];
             std::cout << sidx << " (" << MAGENTA << "\"" << strings[sidx]
                       << "\"" << RESET << ")";
+            return i + 2;
+        }
+        case cppre::detail::InstructionType::CharClass:
+        case cppre::detail::InstructionType::InvertedCharClass: {
+            const size_t cidx = bytecode[i + 1];
+            std::cout << cidx;
+            CharClassNode cc(inst == InstructionType::InvertedCharClass);
+            cc.in_class = char_classes[cidx];
+            std::cout << " " << cc.print_node(0);
             return i + 2;
         }
         case cppre::detail::InstructionType::Anchor:
