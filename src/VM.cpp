@@ -152,6 +152,8 @@ auto inst2string(InstructionType type) -> std::string_view {
         case cppre::detail::InstructionType::InvertedCharClass:
             return "InvertedCharClass";
     }
+    // unreachable
+    return "";
 }
 
 auto copy_saved(Thread::SharedSavedArray const& saved)
@@ -159,8 +161,8 @@ auto copy_saved(Thread::SharedSavedArray const& saved)
     return std::make_shared<Thread::SavedArray>(*saved);
 }
 
-auto update_saved(Thread::SharedSavedArray&& saved, size_t idx,
-                  int n) -> Thread::SharedSavedArray {
+auto update_saved(Thread::SharedSavedArray&& saved, size_t idx, int n)
+    -> Thread::SharedSavedArray {
     if (saved.use_count() == 1) {
         (*saved)[idx] = n;
         return std::move(saved);
@@ -342,8 +344,8 @@ auto VM::print_bytecode() const -> void {
     std::cout << "\n";
 }
 
-auto VM::run_vm(std::string_view const& str,
-                int pc_offset) -> std::optional<Thread::SavedArray> {
+auto VM::run_vm(std::string_view const& str, int pc_offset)
+    -> std::optional<Thread::SavedArray> {
     ThreadList clist;
     ThreadList nlist;
     clist.reserve(bytecode.size());

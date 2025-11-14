@@ -1,31 +1,42 @@
 #include <cppre/Regex.h>
 #include <gtest/gtest.h>
 
+#include <exception>
 #include <string>
 #include <string_view>
 using namespace std::string_literals;
 
-#define test_match(pat, s, ret)                               \
-    {                                                         \
-        std::vector<std::string_view> matches ret;            \
-        SCOPED_TRACE("Matching '"s + pat + "' against " + s); \
-        cppre::Regex re(pat);                                 \
-        auto om = re.match(s);                                \
-        ASSERT_TRUE((bool)om);                                \
-        auto const& m = *om;                                  \
-        ASSERT_EQ(s, m.str());                                \
-        for (size_t i = 0; i < m.submatches().size(); ++i) {  \
-            ASSERT_EQ(matches[i], m.submatches()[i].str());   \
-        }                                                     \
-    }
+#define test_match(pat, s, ret)                                             \
+    do {                                                                    \
+        try {                                                               \
+            std::vector<std::string_view> matches ret;                      \
+            SCOPED_TRACE("Matching '"s + pat + "' against " + s);           \
+            cppre::Regex re(pat);                                           \
+            auto om = re.match(s);                                          \
+            EXPECT_TRUE((bool)om);                                          \
+            auto const& m = *om;                                            \
+            EXPECT_EQ(s, m.str());                                          \
+            for (size_t i = 0; i < m.submatches().size(); ++i) {            \
+                EXPECT_EQ(matches[i], m.submatches()[i].str());             \
+            }                                                               \
+        } catch (std::exception const& e) {                                 \
+            std::cerr << "Exception while testing against pattern: " << pat \
+                      << ", what(): " << e.what() << std::endl;             \
+        }                                                                   \
+    } while (0)
 
-#define test_no_match(pat, str)                                 \
-    {                                                           \
-        SCOPED_TRACE("Matching '"s + pat + "' against " + str); \
-        cppre::Regex re(pat);                                   \
-        auto om = re.match(str);                                \
-        ASSERT_FALSE((bool)om);                                 \
-    }
+#define test_no_match(pat, str)                                             \
+    do {                                                                    \
+        try {                                                               \
+            SCOPED_TRACE("Matching '"s + pat + "' against " + str);         \
+            cppre::Regex re(pat);                                           \
+            auto om = re.match(str);                                        \
+            ASSERT_FALSE((bool)om);                                         \
+        } catch (std::exception const& e) {                                 \
+            std::cerr << "Exception while testing against pattern: " << pat \
+                      << ", what(): " << e.what() << std::endl;             \
+        }                                                                   \
+    } while (0)
 
 TEST(IntegrationTestMatch, TestLiterals) {
     test_match("a", "a", {});

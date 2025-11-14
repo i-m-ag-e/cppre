@@ -135,7 +135,7 @@ auto CharClassNode::print_node(int) const -> std::string {
     for (int i = 0; i < (int)idxs.size(); ++i) {
         if (i < (int)idxs.size() - 1 && idxs[i + 1] - idxs[i] == 1) {
             range_begin = i;
-            while (i < (int)idxs.size() && idxs[i + 1] - idxs[i] == 1)
+            while (i < (int)idxs.size() - 1 && idxs[i + 1] - idxs[i] == 1)
                 ++i;
 
             if (i - range_begin > 1) {

@@ -2,7 +2,6 @@
 #include <cppre/Parse.h>
 #include <gtest/gtest.h>
 
-#include <cctype>
 #include <exception>
 #include <sstream>
 #include <string>
@@ -19,8 +18,8 @@ auto dump_char(char c, std::string_view escapes = "") -> std::string {
         return {c};
 }
 
-auto dump_string(std::string const& str,
-                 std::string_view escapes = "") -> std::string {
+auto dump_string(std::string const& str, std::string_view escapes = "")
+    -> std::string {
     std::string string_escapes = "''";
     string_escapes += escapes;
 
@@ -91,7 +90,7 @@ auto dump_test_ast(CharClassNode const& node) -> std::string {
     for (int i = 0; i < (int)idxs.size(); ++i) {
         if (i < (int)idxs.size() - 1 && idxs[i + 1] - idxs[i] == 1) {
             range_begin = i;
-            while (i < (int)idxs.size() && idxs[i + 1] - idxs[i] == 1)
+            while (i < (int)idxs.size() - 1 && idxs[i + 1] - idxs[i] == 1)
                 ++i;
 
             if (i - range_begin > 1) {
@@ -128,6 +127,8 @@ auto dump_test_ast(ASTNodePtr const& node) -> std::string {
         case cppre::detail::ASTNodeType::CharClass:
             return dump_test_ast(static_cast<CharClassNode const&>(*node));
     }
+    // unreachable
+    return "";
 }
 
 #define test_eq(pat, repr)                                     \

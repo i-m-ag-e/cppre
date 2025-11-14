@@ -6,11 +6,6 @@
 #include <vector>
 using namespace std::string_literals;
 
-// #define test_search(pat, str) \
-//     { EXPECT_EQ(cppre::Regex(pat).search_bool(str), true); }
-// #define test_no_search(pat, str) \
-//     { EXPECT_EQ(cppre::Regex(pat).search_bool(str), false); }
-
 #define test_search(pat, s, ret)                                \
     {                                                           \
         std::vector<std::string_view> matches ret;              \
