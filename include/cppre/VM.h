@@ -21,6 +21,7 @@ enum class InstructionType : uint16_t {
     Anchor,
     Jump,
     CharClass,
+    ShortCharClass,
     InvertedCharClass,
     Match,
 };
@@ -62,6 +63,7 @@ struct VM {
     auto make_code(AlternationNode const& node) -> void;
     auto make_code(GroupNode const& node) -> void;
     auto make_code(CharClassNode const& node) -> void;
+    auto make_code(ShortCharClass const& node) -> void;
 
     auto add_thread(ThreadList& list, Thread&& new_thread,
                     std::string_view const& str) -> void;
@@ -81,8 +83,8 @@ struct VM {
     std::vector<std::vector<bool>> char_classes;
 
     VM(ASTNodePtr const&);
-    auto run_vm(std::string_view const& str,
-                int pc_offset) -> std::optional<Thread::SavedArray>;
+    auto run_vm(std::string_view const& str, int pc_offset)
+        -> std::optional<Thread::SavedArray>;
     auto print_code(size_t offset = 0) const -> void;
 };
 }  // namespace cppre::detail

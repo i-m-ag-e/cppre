@@ -6,11 +6,6 @@
 #include <vector>
 using namespace std::string_literals;
 
-// #define test_search(pat, str) \
-//     { EXPECT_EQ(cppre::Regex(pat).search_bool(str), true); }
-// #define test_no_search(pat, str) \
-//     { EXPECT_EQ(cppre::Regex(pat).search_bool(str), false); }
-
 #define test_search(pat, s, ret)                                \
     {                                                           \
         std::vector<std::string_view> matches ret;              \
@@ -173,4 +168,49 @@ TEST(IntegrationSearchTest, TestCharClass) {
     test_search("[^a-c]+", "abcxyzabc", {"xyz"});
     test_search("a[a-z]+d", "123axyzd456", {"axyzd"});
     test_no_search("a[a-z]+d", "123a123d456");
+}
+
+TEST(IntegrationSearchTest, TestShorthandClasses) {
+    test_search("\\d", "abc1def", {"1"});
+    test_no_search("\\d", "abcdef");
+
+    test_search("\\D", "123a456", {"a"});
+    test_no_search("\\D", "123456");
+
+    test_search("\\w", "!@#a$%", {"a"});
+    test_search("\\w", "!@#_$%", {"_"});
+    test_no_search("\\w", "!@#$%^&*()");
+
+    test_search("\\W", "abc!def", {"!"});
+    test_search("\\W", "abc def", {" "});
+    test_no_search("\\W", "abcdef123_");
+
+    test_search("\\s", "abc def", {" "});
+    test_search("\\s", "abc\tdef", {"\t"});
+    test_no_search("\\s", "abcdef");
+
+    test_search("\\S", "   a   ", {"a"});
+    test_no_search("\\S", "   \t\n   ");
+
+    test_search("\\d+", "abc123def", {"123"});
+    test_search("\\w+", "!!!Hello_World!!!", {"Hello_World"});
+    test_search("a\\s+b", "test a   b test", {"a   b"});
+
+    test_search("(\\d+)-(\\w+)", "id: 42-test_case",
+                ({"42-test_case", "42", "test_case"}));
+    test_search("\\w+\\d\\d", "User99", {"User99"});
+
+    // --- Complex Cases ---
+    test_search("Price:\\s*\\$\\d+", "Total Price: $500 inclusive",
+                {"Price: $500"});
+
+    test_search("key\\s*=\\s*'(\\w+)'", "config { key = 'secret_value' }",
+                ({"key = 'secret_value'", "secret_value"}));
+
+    test_search("(\\d\\d\\d\\d)-(\\d\\d)-(\\d\\d)",
+                "Log entry: 2025-10-27 error...",
+                ({"2025-10-27", "2025", "10", "27"}));
+
+    test_search("call\\s+(\\w+)\\((\\d+)\\)", "Please call process(123) now",
+                ({"call process(123)", "process", "123"}));
 }

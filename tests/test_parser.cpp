@@ -19,8 +19,8 @@ auto dump_char(char c, std::string_view escapes = "") -> std::string {
         return {c};
 }
 
-auto dump_string(std::string const& str,
-                 std::string_view escapes = "") -> std::string {
+auto dump_string(std::string const& str, std::string_view escapes = "")
+    -> std::string {
     std::string string_escapes = "''";
     string_escapes += escapes;
 
@@ -91,7 +91,7 @@ auto dump_test_ast(CharClassNode const& node) -> std::string {
     for (int i = 0; i < (int)idxs.size(); ++i) {
         if (i < (int)idxs.size() - 1 && idxs[i + 1] - idxs[i] == 1) {
             range_begin = i;
-            while (i < (int)idxs.size() && idxs[i + 1] - idxs[i] == 1)
+            while (i < (int)idxs.size() - 1 && idxs[i + 1] - idxs[i] == 1)
                 ++i;
 
             if (i - range_begin > 1) {
@@ -111,6 +111,11 @@ auto dump_test_ast(CharClassNode const& node) -> std::string {
     return ss.str();
 }
 
+auto dump_test_ast(ShortCharClass const& scc) -> std::string {
+    char c = static_cast<char>(scc.scc_type);
+    return {'\\', scc.inverted ? static_cast<char>(std::toupper(c)) : c};
+}
+
 auto dump_test_ast(ASTNodePtr const& node) -> std::string {
     switch (node->type) {
         case cppre::detail::ASTNodeType::Alternation:
@@ -127,7 +132,11 @@ auto dump_test_ast(ASTNodePtr const& node) -> std::string {
             return dump_test_ast(static_cast<GroupNode const&>(*node));
         case cppre::detail::ASTNodeType::CharClass:
             return dump_test_ast(static_cast<CharClassNode const&>(*node));
+        case cppre::detail::ASTNodeType::ShortCharClass:
+            return dump_test_ast(static_cast<ShortCharClass const&>(*node));
     }
+    // unreachable
+    return "";
 }
 
 #define test_eq(pat, repr)                                     \
@@ -325,4 +334,32 @@ TEST(ParserTest, CharClassTests) {
     test_eq("[--]", "[(\\-)]");
     test_eq("[---]", "[(\\-)]");
     test_eq("[a-c-]", "[(\\-)(a-c)]");
+}
+
+TEST(ParserTest, ShortCharClassTests) {
+    test_eq("\\d", "\\d");
+    test_eq("\\D", "\\D");
+    test_eq("\\w", "\\w");
+    test_eq("\\W", "\\W");
+    test_eq("\\s", "\\s");
+    test_eq("\\S", "\\S");
+
+    test_eq("a\\db", "Literal('a')\\dLiteral('b')");
+    test_eq("a\\Db", "Literal('a')\\DLiteral('b')");
+    test_eq("\\w\\s\\d", "\\w\\s\\d");
+    test_eq("a\\Wb", "Literal('a')\\WLiteral('b')");
+
+    test_eq("\\d*", "Rep(*, \\d)");
+    test_eq("\\w+", "Rep(+, \\w)");
+    test_eq("\\s?", "Rep(?, \\s)");
+    test_eq("\\D+", "Rep(+, \\D)");
+    test_eq("a\\s*b", "Literal('a')Rep(*, \\s)Literal('b')");
+
+    test_eq("\\d|a", "(\\d|Literal('a'))");
+    test_eq("a|\\s", "(Literal('a')|\\s)");
+    test_eq("\\w|\\D", "(\\w|\\D)");
+
+    test_eq("(\\d)", "([1](\\d))");
+    test_eq("(a\\s)+", "Rep(+, ([1](Literal('a')\\s)))");
+    test_eq("(\\d|\\w)*", "Rep(*, ([1]((\\d|\\w))))");
 }

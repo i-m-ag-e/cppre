@@ -11,7 +11,7 @@
 namespace cppre {
 
 class Match {
-    std::string_view m_view;
+    std::string m_string;
     bool m_matched;
     size_t m_begin;
     size_t m_end;
@@ -30,7 +30,7 @@ class Match {
     auto matched() const -> bool;
     auto get_begin() const -> size_t;
     auto get_end() const -> size_t;
-    auto str() const -> std::string_view const&;
+    auto str() const -> std::string const&;
     auto submatches() const -> std::vector<Match> const&;
 };
 

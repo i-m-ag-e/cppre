@@ -4,6 +4,7 @@
 #include <cppre/AST.h>
 #include <cppre/Color.h>
 
+#include <cctype>
 #include <iomanip>
 #include <iostream>
 #include <ostream>
@@ -135,7 +136,7 @@ auto CharClassNode::print_node(int) const -> std::string {
     for (int i = 0; i < (int)idxs.size(); ++i) {
         if (i < (int)idxs.size() - 1 && idxs[i + 1] - idxs[i] == 1) {
             range_begin = i;
-            while (i < (int)idxs.size() && idxs[i + 1] - idxs[i] == 1)
+            while (i < (int)idxs.size() - 1 && idxs[i + 1] - idxs[i] == 1)
                 ++i;
 
             if (i - range_begin > 1) {
@@ -160,6 +161,20 @@ auto CharClassNode::print_node(int) const -> std::string {
     }
 
     ss << "])";
+    return ss.str();
+}
+
+ShortCharClass::ShortCharClass(char c)
+    : AST(ASTNodeType::ShortCharClass),
+      scc_type(static_cast<SCCType>(std::tolower(c))),
+      inverted(std::isupper(c)) {}
+
+auto ShortCharClass::print_node(int) const -> std::string {
+    std::stringstream ss;
+    ss << CYAN BOLD "CharClass" RESET << "(" YELLOW << '\\'
+       << static_cast<char>(inverted ? std::toupper(static_cast<char>(scc_type))
+                                     : static_cast<char>(scc_type))
+       << RESET ")";
     return ss.str();
 }
 
