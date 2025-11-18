@@ -13,7 +13,7 @@ namespace cppre {
 using namespace detail;
 
 Match::Match(std::string_view full_str, size_t begin, size_t end)
-    : m_view(full_str.begin() + begin, full_str.begin() + end),
+    : m_string(full_str.begin() + begin, full_str.begin() + end),
       m_matched(true),
       m_begin(begin),
       m_end(end) {}
@@ -32,8 +32,8 @@ auto Match::get_end() const -> size_t {
     return m_end;
 }
 
-auto Match::str() const -> std::string_view const& {
-    return m_view;
+auto Match::str() const -> std::string const& {
+    return m_string;
 }
 
 auto Match::submatches() const -> std::vector<Match> const& {
