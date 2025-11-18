@@ -141,6 +141,15 @@ auto parse_concat_term(Parser& parser) -> ASTNodePtr {
             throw std::runtime_error(
                 "Closing paranthesis '(' without corresponding open one");
 
+        case '\\': {
+            auto [esc_type, escaped] = escape(parser.peek_next());
+            if (esc_type == EscapeType::CharClass) {
+                parser.advance();
+                return std::make_unique<ShortCharClass>(parser.advance());
+            }
+            [[fallthrough]];
+        }
+
         default:
             return parse_string(parser);
     }
@@ -166,6 +175,12 @@ auto parse_string(Parser& parser) -> ASTNodePtr {
                 break;
 
             auto [esc_type, escaped] = escape(parser.peek());
+
+            if (esc_type == EscapeType::CharClass) {
+                parser.rollback();
+                break;
+            }
+
             if (kQuantifiers.find(parser.peek_next()) != std::string::npos) {
                 if (start == parser.current_pos - 1) {
                     parser.advance();

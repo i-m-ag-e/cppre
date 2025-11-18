@@ -8,6 +8,7 @@
 
 #include <algorithm>
 #include <cassert>
+#include <cctype>
 #include <cstddef>
 #include <cstdint>
 #include <iomanip>
@@ -43,6 +44,9 @@ auto VM::from_ast(const ASTNodePtr& ast) -> void {
             break;
         case ASTNodeType::CharClass:
             make_code(static_cast<CharClassNode const&>(*ast));
+            break;
+        case ASTNodeType::ShortCharClass:
+            make_code(static_cast<ShortCharClass const&>(*ast));
             break;
     }
 }
@@ -130,6 +134,13 @@ auto VM::make_code(CharClassNode const& node) -> void {
     bytecode.push_back(char_classes.size() - 1);
 }
 
+auto VM::make_code(ShortCharClass const& node) -> void {
+    bytecode.push_back(static_cast<uint16_t>(InstructionType::ShortCharClass));
+    char c_scctype = static_cast<char>(node.scc_type);
+    bytecode.push_back(
+        static_cast<char>(node.inverted ? std::toupper(c_scctype) : c_scctype));
+}
+
 namespace {
 auto inst2string(InstructionType type) -> std::string_view {
     switch (type) {
@@ -151,6 +162,8 @@ auto inst2string(InstructionType type) -> std::string_view {
             return "CharClass";
         case cppre::detail::InstructionType::InvertedCharClass:
             return "InvertedCharClass";
+        case cppre::detail::InstructionType::ShortCharClass:
+            return "ShortCharClass";
     }
     // unreachable
     return "";
@@ -313,6 +326,35 @@ auto VM::run_thread(ThreadList& tlist, Thread const& thread,
             break;
         }
 
+        case cppre::detail::InstructionType::ShortCharClass: {
+            const char c = bytecode[pc + 1];
+            auto scc = static_cast<ShortCharClass::SCCType>(std::tolower(c));
+            bool inverted = std::isupper(c);
+            bool matches = false;
+
+            if (thread.sp >= given.length())
+                break;
+
+            switch (scc) {
+                case ShortCharClass::SCCType::Digit:
+                    matches = std::isdigit(given[thread.sp]);
+                    break;
+                case ShortCharClass::SCCType::Space:
+                    matches = std::isspace(given[thread.sp]);
+                    break;
+                case ShortCharClass::SCCType::Word:
+                    matches = given[thread.sp] == '_' ||
+                              std::isalnum(given[thread.sp]);
+                    break;
+            }
+
+            if (matches ^ inverted) {
+                add_thread(tlist, Thread(pc + 2, thread.sp + 1, thread.saved),
+                           given);
+            }
+            break;
+        }
+
         case InstructionType::Match:
             return true;
 
@@ -400,7 +442,7 @@ auto VM::print_inst(int i) const -> int {
             std::cout << cidx;
             CharClassNode cc(inst == InstructionType::InvertedCharClass);
             cc.in_class = char_classes[cidx];
-            std::cout << " " << cc.print_node(0);
+            // std::cout << " " << cc.print_node(0);
             return i + 2;
         }
         case cppre::detail::InstructionType::Anchor:

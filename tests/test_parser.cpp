@@ -2,6 +2,7 @@
 #include <cppre/Parse.h>
 #include <gtest/gtest.h>
 
+#include <cctype>
 #include <exception>
 #include <sstream>
 #include <string>
@@ -110,6 +111,11 @@ auto dump_test_ast(CharClassNode const& node) -> std::string {
     return ss.str();
 }
 
+auto dump_test_ast(ShortCharClass const& scc) -> std::string {
+    char c = static_cast<char>(scc.scc_type);
+    return {'\\', scc.inverted ? static_cast<char>(std::toupper(c)) : c};
+}
+
 auto dump_test_ast(ASTNodePtr const& node) -> std::string {
     switch (node->type) {
         case cppre::detail::ASTNodeType::Alternation:
@@ -126,6 +132,8 @@ auto dump_test_ast(ASTNodePtr const& node) -> std::string {
             return dump_test_ast(static_cast<GroupNode const&>(*node));
         case cppre::detail::ASTNodeType::CharClass:
             return dump_test_ast(static_cast<CharClassNode const&>(*node));
+        case cppre::detail::ASTNodeType::ShortCharClass:
+            return dump_test_ast(static_cast<ShortCharClass const&>(*node));
     }
     // unreachable
     return "";
@@ -326,4 +334,32 @@ TEST(ParserTest, CharClassTests) {
     test_eq("[--]", "[(\\-)]");
     test_eq("[---]", "[(\\-)]");
     test_eq("[a-c-]", "[(\\-)(a-c)]");
+}
+
+TEST(ParserTest, ShortCharClassTests) {
+    test_eq("\\d", "\\d");
+    test_eq("\\D", "\\D");
+    test_eq("\\w", "\\w");
+    test_eq("\\W", "\\W");
+    test_eq("\\s", "\\s");
+    test_eq("\\S", "\\S");
+
+    test_eq("a\\db", "Literal('a')\\dLiteral('b')");
+    test_eq("a\\Db", "Literal('a')\\DLiteral('b')");
+    test_eq("\\w\\s\\d", "\\w\\s\\d");
+    test_eq("a\\Wb", "Literal('a')\\WLiteral('b')");
+
+    test_eq("\\d*", "Rep(*, \\d)");
+    test_eq("\\w+", "Rep(+, \\w)");
+    test_eq("\\s?", "Rep(?, \\s)");
+    test_eq("\\D+", "Rep(+, \\D)");
+    test_eq("a\\s*b", "Literal('a')Rep(*, \\s)Literal('b')");
+
+    test_eq("\\d|a", "(\\d|Literal('a'))");
+    test_eq("a|\\s", "(Literal('a')|\\s)");
+    test_eq("\\w|\\D", "(\\w|\\D)");
+
+    test_eq("(\\d)", "([1](\\d))");
+    test_eq("(a\\s)+", "Rep(+, ([1](Literal('a')\\s)))");
+    test_eq("(\\d|\\w)*", "Rep(*, ([1]((\\d|\\w))))");
 }

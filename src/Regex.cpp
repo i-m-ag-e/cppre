@@ -68,7 +68,7 @@ auto Regex::search_bool(std::string const& str) const -> bool {
 }
 
 auto Regex::search(std::string const& str) const -> std::optional<Match> {
-    m_vm.print_code(kSearchPCOffset);
+    // m_vm.print_code(kSearchPCOffset);
 
     auto saved = m_vm.run_vm(str, kSearchPCOffset);
     if (saved)
@@ -77,14 +77,14 @@ auto Regex::search(std::string const& str) const -> std::optional<Match> {
 }
 
 auto Regex::match_bool(std::string const& str) const -> bool {
-    m_vm.print_code();
+    // m_vm.print_code();
 
     auto saved = m_vm.run_vm(str, kMatchPCOffset);
     return saved && (*saved)[1] == (int)str.length();
 }
 
 auto Regex::match(std::string const& str) const -> std::optional<Match> {
-    m_vm.print_code();
+    // m_vm.print_code();
 
     auto saved = m_vm.run_vm(str, kMatchPCOffset);
     if (saved && (*saved)[1] == (int)str.length())

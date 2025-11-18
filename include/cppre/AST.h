@@ -20,7 +20,8 @@ enum class ASTNodeType {
     Concat,
     Alternation,
     Group,
-    CharClass
+    CharClass,
+    ShortCharClass
 };
 
 struct AST {
@@ -92,6 +93,17 @@ struct CharClassNode final : public AST {
     explicit CharClassNode(bool inverted);
     auto print_node(int indent_level) const -> std::string override;
     ~CharClassNode() override = default;
+};
+
+struct ShortCharClass final : public AST {
+    enum class SCCType : char { Digit = 'd', Space = 's', Word = 'w' };
+
+    SCCType scc_type;
+    bool inverted;
+
+    explicit ShortCharClass(char c);
+    auto print_node(int indent_level) const -> std::string override;
+    ~ShortCharClass() override = default;
 };
 
 }  // namespace detail
