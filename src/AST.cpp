@@ -178,4 +178,14 @@ auto ShortCharClass::print_node(int) const -> std::string {
     return ss.str();
 }
 
+AnchorNode::AnchorNode(AnchorNode::AnchorType anchor_type)
+    : AST(ASTNodeType::Anchor), anchor_type(anchor_type) {}
+
+auto AnchorNode::print_node(int) const -> std::string {
+    std::stringstream ss;
+    ss << CYAN BOLD "Anchor" RESET << "(" YELLOW << '\\'
+       << static_cast<char>(anchor_type) << RESET ")";
+    return ss.str();
+}
+
 }  // namespace cppre::detail

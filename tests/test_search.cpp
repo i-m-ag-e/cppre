@@ -214,3 +214,38 @@ TEST(IntegrationSearchTest, TestShorthandClasses) {
     test_search("call\\s+(\\w+)\\((\\d+)\\)", "Please call process(123) now",
                 ({"call process(123)", "process", "123"}));
 }
+
+TEST(IntegrationSearchTest, TestAnchors) {
+    test_search("^abc", "abcdef", {"abc"});
+    test_no_search("^abc", "defabc");
+
+    test_search("xyz$", "abcxyz", {"xyz"});
+    test_no_search("xyz$", "xyzabc");
+
+    test_search("^abc$", "abc", {"abc"});
+    test_no_search("^abc$", " abc ");
+    test_search("^$", "", {""});
+
+    test_search("\\Aabc", "abcdef", {"abc"});
+    test_no_search("\\Aabc", "defabc");
+
+    test_search("xyz\\Z", "abcxyz", {"xyz"});
+    test_no_search("xyz\\Z", "xyzabc");
+
+    test_search("\\bword\\b", "this is a word here", {"word"});
+    test_search("\\bword\\b", "word starts", {"word"});
+    test_search("\\bword\\b", "ends with word", {"word"});
+    test_search("\\bword\\b", "word", {"word"});
+    test_no_search("\\bword\\b", "aword");
+    test_no_search("\\bword\\b", "wordy");
+    test_no_search("\\bword\\b", "awordy");
+
+    test_search("\\Btest\\B", "atesting", {"test"});
+    test_search("a\\Btest\\Bb", "atestb", {"atestb"});
+    test_no_search("\\Btest\\B", "a test b");
+    test_no_search("\\Btest\\B", "testb");
+    test_no_search("\\Btest\\B", "atest");
+
+    test_search("[\\b]", "a\bc", {"\b"});
+    test_no_search("[\\b]", "abc");
+}

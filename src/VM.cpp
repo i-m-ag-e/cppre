@@ -5,6 +5,7 @@
 #include <cppre/AST.h>
 #include <cppre/Color.h>
 #include <cppre/VM.h>
+#include <sys/types.h>
 
 #include <algorithm>
 #include <cassert>
@@ -21,6 +22,8 @@
 
 namespace cppre {
 namespace detail {
+
+using AnchorType = AnchorNode::AnchorType;
 
 auto VM::from_ast(const ASTNodePtr& ast) -> void {
     switch (ast->type) {
@@ -47,6 +50,9 @@ auto VM::from_ast(const ASTNodePtr& ast) -> void {
             break;
         case ASTNodeType::ShortCharClass:
             make_code(static_cast<ShortCharClass const&>(*ast));
+            break;
+        case ASTNodeType::Anchor:
+            make_code(static_cast<AnchorNode const&>(*ast));
             break;
     }
 }
@@ -139,6 +145,11 @@ auto VM::make_code(ShortCharClass const& node) -> void {
     char c_scctype = static_cast<char>(node.scc_type);
     bytecode.push_back(
         static_cast<char>(node.inverted ? std::toupper(c_scctype) : c_scctype));
+}
+
+auto VM::make_code(AnchorNode const& node) -> void {
+    bytecode.push_back(static_cast<uint16_t>(InstructionType::Anchor));
+    bytecode.push_back(static_cast<uint16_t>(node.anchor_type));
 }
 
 namespace {
@@ -243,28 +254,28 @@ auto VM::add_thread(ThreadList& tlist, Thread&& new_thread,
             break;
         case cppre::detail::InstructionType::Anchor: {
             bool assertion = false;
-            switch (bytecode[pc + 1]) {
-                case 'A':
+            switch (static_cast<AnchorType>(bytecode[pc + 1])) {
+                case AnchorType::StartOfString:
                     assertion = new_thread.sp == 0;
                     break;
-                case '^':
+                case AnchorType::StartOfLine:
                     assertion =
                         new_thread.sp == 0 || str[new_thread.sp - 1] == '\n';
                     break;
-                case 'Z':
+                case AnchorType::EndOfString:
                     assertion = new_thread.sp == str.length();
                     break;
-                case '$':
+                case AnchorType::EndOfLine:
                     assertion = new_thread.sp == str.length() ||
                                 str[new_thread.sp] == '\n';
                     break;
-                case 'b':
+                case AnchorType::WordBoundary:
                     assertion = new_thread.sp == 0 ||
                                 new_thread.sp == str.length() ||
                                 std::isspace(str[new_thread.sp - 1]) ||
                                 std::isspace(str[new_thread.sp]);
                     break;
-                case 'B':
+                case AnchorType::NotWordBoundary:
                     assertion =
                         !(new_thread.sp == 0 || new_thread.sp == str.length() ||
                           std::isspace(str[new_thread.sp - 1]) ||
