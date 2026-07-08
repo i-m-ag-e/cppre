@@ -11,6 +11,7 @@
 
 namespace cppre {
 namespace detail {
+
 enum class QuantifierType : char { Star = '*', Plus = '+', Optional = '?' };
 
 enum class ASTNodeType {
@@ -21,7 +22,8 @@ enum class ASTNodeType {
     Alternation,
     Group,
     CharClass,
-    ShortCharClass
+    ShortCharClass,
+    Anchor
 };
 
 struct AST {
@@ -104,6 +106,23 @@ struct ShortCharClass final : public AST {
     explicit ShortCharClass(char c);
     auto print_node(int indent_level) const -> std::string override;
     ~ShortCharClass() override = default;
+};
+
+struct AnchorNode final : public AST {
+    enum class AnchorType : char {
+        StartOfString = 'A',
+        StartOfLine = '^',
+        EndOfString = 'Z',
+        EndOfLine = '$',
+        WordBoundary = 'b',
+        NotWordBoundary = 'B'
+    };
+
+    AnchorType anchor_type;
+
+    explicit AnchorNode(AnchorType anchor_type);
+    auto print_node(int indent_level) const -> std::string override;
+    ~AnchorNode() override = default;
 };
 
 }  // namespace detail

@@ -10,6 +10,22 @@
 using namespace std::string_literals;
 
 namespace {
+
+struct StartupPrinter {
+    StartupPrinter() {
+#ifdef CPPRE_USE_PARSER_COMB
+        std::cout << "\n=== Running tests with ParserComb parser ===\n";
+#else
+        std::cout << "\n=== Running tests with Handwritten parser ===\n";
+#endif
+    }
+};
+
+StartupPrinter printer;
+
+}  // namespace
+
+namespace {
 using namespace cppre::detail;
 
 auto dump_char(char c, std::string_view escapes = "") -> std::string {
@@ -116,6 +132,14 @@ auto dump_test_ast(ShortCharClass const& scc) -> std::string {
     return {'\\', scc.inverted ? static_cast<char>(std::toupper(c)) : c};
 }
 
+auto dump_test_ast(AnchorNode const& node) -> std::string {
+    char c = static_cast<char>(node.anchor_type);
+    if (node.anchor_type == AnchorNode::AnchorType::StartOfLine ||
+        node.anchor_type == AnchorNode::AnchorType::EndOfLine)
+        return "Anchor('" + std::string(1, c) + "')";
+    return "Anchor('" + std::string{'\\', c} + "')";
+}
+
 auto dump_test_ast(ASTNodePtr const& node) -> std::string {
     switch (node->type) {
         case cppre::detail::ASTNodeType::Alternation:
@@ -134,6 +158,8 @@ auto dump_test_ast(ASTNodePtr const& node) -> std::string {
             return dump_test_ast(static_cast<CharClassNode const&>(*node));
         case cppre::detail::ASTNodeType::ShortCharClass:
             return dump_test_ast(static_cast<ShortCharClass const&>(*node));
+        case cppre::detail::ASTNodeType::Anchor:
+            return dump_test_ast(static_cast<AnchorNode const&>(*node));
     }
     // unreachable
     return "";
@@ -158,7 +184,7 @@ TEST(ParserTest, TestLiteral) {
     test_eq("abcd", "Literal('abcd')");
     test_eq("ab\\\\cd", "Literal('ab\\cd')");
     test_eq("abcd\\n", "Literal('abcd\n')");
-    test_eq("abcd\\b", "Literal('abcd\b')");
+    test_eq("abcd\\b", "Literal('abcd')Anchor('\\b')");  // \b is special
     test_eq("abcd\\r", "Literal('abcd\r')");
     test_eq("abcd\\t", "Literal('abcd\t')");
 
@@ -362,4 +388,31 @@ TEST(ParserTest, ShortCharClassTests) {
     test_eq("(\\d)", "([1](\\d))");
     test_eq("(a\\s)+", "Rep(+, ([1](Literal('a')\\s)))");
     test_eq("(\\d|\\w)*", "Rep(*, ([1]((\\d|\\w))))");
+}
+
+TEST(ParserTest, AnchorTests) {
+    test_eq("^a", "Anchor('^')Literal('a')");
+    test_eq("a$", "Literal('a')Anchor('$')");
+    test_eq("\\Aa\\Z", "Anchor('\\A')Literal('a')Anchor('\\Z')");
+    test_eq("a\\Ab^c$d\\be\\Zf\\Bg",
+            "Literal('a')Anchor('\\A')Literal('b')Anchor('^')"
+            "Literal('c')Anchor('$')Literal('d')Anchor('\\b')"
+            "Literal('e')Anchor('\\Z')Literal('f')Anchor('\\B')Literal('g')");
+
+    // \b inside a character class is \x08, but outside is an anchor
+    test_eq("\\bword\\B", "Anchor('\\b')Literal('word')Anchor('\\B')");
+    test_eq("[\\b]", "[(\b)]");
+    test_eq("\\b[\\b]", "Anchor('\\b')[(\b)]");
+
+    test_eq("\\^a", "Literal('^a')");
+    test_eq("a\\$", "Literal('a$')");
+
+    test_eq("\\\\A", "Literal('\\A')");
+    test_eq("\\\\Z", "Literal('\\Z')");
+    test_eq("\\\\b", "Literal('\\b')");
+    test_eq("\\\\B", "Literal('\\B')");
+
+    test_eq("^\\^$", "Anchor('^')Literal('^')Anchor('$')");
+    test_eq("\\A\\\\A", "Anchor('\\A')Literal('\\A')");
+    test_eq("\\b\\\\b", "Anchor('\\b')Literal('\\b')");
 }

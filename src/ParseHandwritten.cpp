@@ -51,10 +51,11 @@ struct Parser {
 };
 
 static constexpr std::string_view kQuantifiers = "*+?";
-static constexpr std::string_view kMetacharacters = ".|()[*+?";
+static constexpr std::string_view kMetacharacters = ".|()[*+?^$";
 
-enum EscapeType { Char, CharClass };
-static auto escape(char c) -> std::pair<EscapeType, char> {
+enum EscapeType { Anchor, Char, CharClass };
+static auto escape(char c, bool inside_char_class = false)
+    -> std::pair<EscapeType, char> {
     switch (c) {
         case 'n':
             return {EscapeType::Char, '\n'};
@@ -62,8 +63,6 @@ static auto escape(char c) -> std::pair<EscapeType, char> {
             return {EscapeType::Char, '\t'};
         case 'r':
             return {EscapeType::Char, '\r'};
-        case 'b':
-            return {EscapeType::Char, '\b'};
         case 'd':
         case 'w':
         case 's':
@@ -71,6 +70,13 @@ static auto escape(char c) -> std::pair<EscapeType, char> {
         case 'W':
         case 'S':
             return {EscapeType::CharClass, c};
+        case 'A':
+        case 'Z':
+        case 'B':
+            return {EscapeType::Anchor, c};
+        case 'b':
+            return inside_char_class ? std::pair{EscapeType::Char, '\b'}
+                                     : std::pair{EscapeType::Anchor, 'b'};
 
         default:
             return {EscapeType::Char, c};
@@ -146,9 +152,18 @@ auto parse_concat_term(Parser& parser) -> ASTNodePtr {
             if (esc_type == EscapeType::CharClass) {
                 parser.advance();
                 return std::make_unique<ShortCharClass>(parser.advance());
+            } else if (esc_type == EscapeType::Anchor) {
+                parser.advance();
+                return std::make_unique<AnchorNode>(
+                    static_cast<AnchorNode::AnchorType>(parser.advance()));
             }
-            [[fallthrough]];
+            return parse_string(parser);
         }
+
+        case '^':
+        case '$':
+            return std::make_unique<AnchorNode>(
+                static_cast<AnchorNode::AnchorType>(parser.advance()));
 
         default:
             return parse_string(parser);
@@ -176,7 +191,7 @@ auto parse_string(Parser& parser) -> ASTNodePtr {
 
             auto [esc_type, escaped] = escape(parser.peek());
 
-            if (esc_type == EscapeType::CharClass) {
+            if (esc_type != EscapeType::Char) {
                 parser.rollback();
                 break;
             }
@@ -237,12 +252,12 @@ auto parse_group(Parser& parser) -> ASTNodePtr {
 }
 
 namespace {
-auto parse_char(Parser& parser) -> char {
+auto parse_char_class_char(Parser& parser) -> char {
     if (parser.is_at_end())
         return '\0';
     char c = parser.advance();
     if (c == '\\') {
-        auto [esc_type, esc_char] = escape(parser.peek());
+        auto [esc_type, esc_char] = escape(parser.peek(), true);
         parser.advance();
         return esc_char;
     } else {
@@ -258,7 +273,7 @@ auto parse_char_class(Parser& parser) -> ASTNodePtr {
     auto node = std::make_unique<CharClassNode>(inverted);
 
     while (!parser.is_at_end() && parser.peek() != ']') {
-        char rb = parse_char(parser);
+        char rb = parse_char_class_char(parser);
 
         if (parser.peek() == '-') {
             parser.advance();
@@ -268,7 +283,7 @@ auto parse_char_class(Parser& parser) -> ASTNodePtr {
                 break;
             }
 
-            char rc = parse_char(parser);
+            char rc = parse_char_class_char(parser);
             if (rb <= rc)
                 std::fill(node->in_class.begin() + rb,
                           node->in_class.begin() + rc + 1, true);

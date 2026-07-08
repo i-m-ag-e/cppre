@@ -2,7 +2,6 @@
 // Created by akul on 8/9/25.
 //
 
-#include <cppre/AST.h>
 #include <cppre/Parse.h>
 #include <cppre/Regex.h>
 #include <cppre/VM.h>
@@ -55,5 +54,25 @@ int main(int, char* argv[]) {
     } else {
         std::cout << "No SEARCH\n";
     }
+    std::cout << '\n';
+
+    const cppre::Regex re_new("^hello$");
+    const std::string test = "hello";
+    std::cout << re_new.print_ast() << std::endl;
+    auto match1 = re_new.match(test);
+    if (match1) {
+        print_match(*match1);
+    } else {
+        std::cout << "No MATCH\n";
+    }
+    std::cout << '\n';
+
+    auto search1 = re_new.search(test);
+    if (search1) {
+        print_match(*search1);
+    } else {
+        std::cout << "No SEARCH\n";
+    }
+
     std::cout << '\n';
 }

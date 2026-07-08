@@ -26,15 +26,6 @@ enum class InstructionType : uint16_t {
     Match,
 };
 
-enum class AnchorType : char {
-    StartOfString = 'A',
-    StartOfLine = '^',
-    EndOfString = 'Z',
-    EndOfLine = '$',
-    WordBoundary = 'b',
-    NotWordBoundary = 'B'
-};
-
 using Bytecode = std::vector<uint16_t>;
 
 struct Thread {
@@ -64,6 +55,7 @@ struct VM {
     auto make_code(GroupNode const& node) -> void;
     auto make_code(CharClassNode const& node) -> void;
     auto make_code(ShortCharClass const& node) -> void;
+    auto make_code(AnchorNode const& node) -> void;
 
     auto add_thread(ThreadList& list, Thread&& new_thread,
                     std::string_view const& str) -> void;

@@ -242,3 +242,30 @@ TEST(IntegrationTestMatch, TestShorthandClasses) {
     test_match("(\\w+\\s*:\\s*\\d+;)+", "width:100;height:200;",
                {"height:200;"});
 }
+
+TEST(IntegrationTestMatch, TestAnchors) {
+    test_match("^abc", "abc", {});
+    test_match("abc$", "abc", {});
+    test_match("^abc$", "abc", {});
+    test_no_match("^def", "abcdef");
+    test_no_match("abc$", "abcdef");
+
+    test_match("\\Aabc", "abc", {});
+    test_match("abc\\Z", "abc", {});
+    test_match("\\Aabc\\Z", "abc", {});
+    test_no_match("\\Adef", "abcdef");
+    test_no_match("abc\\Z", "abcdef");
+
+    test_match("\\bword\\b", "word", {});
+    test_match("two\\b \\bwords", "two words", {});
+    test_no_match("\\Bword", "word");
+    test_no_match("word\\B", "word");
+    test_no_match("a\\bc", "abc");
+
+    test_match("a\\Bw\\Bo\\Br\\Bd", "aword", {});
+    test_no_match("a\\Bword", "a word");
+
+    test_match("[\\b]", "\b", {});
+    test_match("a[\\b]c", "a\bc", {});
+    test_no_match("[\\b]", "b");
+}
