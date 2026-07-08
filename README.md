@@ -35,44 +35,18 @@ You can customize the build using the following CMake options:
 ## Supported Features
 
 * Literal characters
-
-
 * Concatenation
-
-
 * Alternation (`|`)
-
-
 * Kleene star (`*`)
-
-
 * Plus (`+`)
-
-
 * Optional (`?`)
-
-
 * Character classes (e.g., `[a-z]`, `[^0-9]`)
-
-
 * Grouping with parentheses (`()`)
-
-
 * Grouping with non-capturing parentheses (`(?:...)`)
-
-
 * Escape sequences (e.g., `\n`, `\t`, `\\`, etc.)
-
-
 * Shorthand character classes (e.g., `\d`, `\w`, `\s`, etc.)
-
-
 * Anchors (`^`, `$`, `\A`, `\Z`, `\b`, `\B`)
-
-
 * Matching an exact string
-
-
 * Searching for a pattern within a larger string
 
 
@@ -129,10 +103,4 @@ The project includes a test suite covering basic execution, complex searching, m
 ## TODO
 
 * More comprehensive error handling in the parser
-
-
 * Quantifiers with specific counts (e.g., `{m,n}`)
-
-
-
-```
